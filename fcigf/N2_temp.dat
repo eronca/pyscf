@@ -1,0 +1,709 @@
+R =  1.1  ang
+SCF energy: -108.983006532 
+
+
+******** CASCI flags ********
+CAS (3e+3e, 6o), ncore = 4, nvir = 50
+max_memory 4000 (MB)
+******** CI flags ********
+fci module = pyscf.fci.direct_spin0
+max. cycles = 50
+conv_tol = 1e-08
+linear dependence = 1e-10
+level shift = 0
+max iter space = 12
+max_memory 1200 MB
+davidson only = False
+nroots = 1
+CASCI E = -109.041526122259, E(CI) = -11.477543379305
+CASSCF energy: -109.041526122
+
+Starting GF code...
+(c) Alexander Sokolov, 2015
+
+Ground state CASSCF energy:  -109.041526122
+Number of electrons:         14
+Number of basis functions:   60
+Number of core orbitals:     4
+Number of external orbitals: 50
+Number of active orbitals:   6
+Number of active electrons:  (3, 3)
+SCF orbital energies:
+[-15.6824592  -15.67896818  -1.46793569  -0.77818719  -0.63212832  -0.61103091  -0.61103091   0.16079627   0.16079627   0.42524229   0.56215832
+   0.56287886   0.56287886   0.67229299   0.73156858   0.73156858   0.92413331   1.04842305   1.04842305   1.0872911    1.34143221   1.34143221
+   1.51202835   1.51202835   1.93257599   1.94091922   1.94091922   2.24420038   3.16596711   3.16596711   3.3024177    3.50734069   3.50734069
+   3.75823098   3.82793934   3.82793934   3.95934255   3.95934255   3.98551581   3.98551581   4.38977566   4.44573526   4.44573526   4.77175007
+   4.77175007   4.88614858   4.88614858   4.90706791   4.90706791   5.0201062    5.30464387   5.30464387   5.41700417   5.41700417   5.56346679
+   6.17506105   6.85034069   6.85034069   7.00284199  16.63883817]
+(4, 4, 4, 4)
+Energy(FC)                   -121.1364221385
+Energy(CAS)                   -11.4775433793
+Total Electronic Energy      -132.6139655178
+
+Omega range:  (-1.5, 1.5)
+Delta:  0.05
+Number of points:  200
+Step size:  0.015
+
+Omega value (real, imag):  -1.5 0.0
+
+GF(0,0):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  2.26557986682e-05
+Iteration  0 : RMS = 1.0231e-04
+Iteration  1 : RMS = 1.3139e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 3.3009e-04
+Iteration  1 : RMS = 1.9739e-04
+Iteration  2 : RMS = 5.4467e-05
+Iteration  3 : RMS = 1.7662e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.99340693984e-05
+Iteration  0 : RMS = 2.7522e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.7283e-04
+Iteration  1 : RMS = 2.8549e-04
+Iteration  2 : RMS = 1.2108e-04
+Iteration  3 : RMS = 5.1616e-05
+Iterations converged
+
+GF(1,1):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1324e-04
+Iteration  1 : RMS = 6.3920e-05
+Iteration  2 : RMS = 2.9784e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.2909e-04
+Iteration  1 : RMS = 2.2686e-04
+Iteration  2 : RMS = 8.2048e-05
+Iteration  3 : RMS = 3.1898e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9615e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.0861e-04
+Iteration  1 : RMS = 1.4433e-04
+Iteration  2 : RMS = 2.4611e-04
+Iteration  3 : RMS = 1.6337e-04
+Iteration  4 : RMS = 1.7643e-04
+Iteration  5 : RMS = 1.3445e-04
+Iteration  6 : RMS = 1.7485e-04
+Iteration  7 : RMS = 1.4794e-04
+Iteration  8 : RMS = 1.8181e-04
+Iteration  9 : RMS = 1.6109e-04
+Iteration  10 : RMS = 5.7657e-05
+Iterations converged
+
+GF(2,2):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1324e-04
+Iteration  1 : RMS = 6.3920e-05
+Iteration  2 : RMS = 2.9784e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.2909e-04
+Iteration  1 : RMS = 2.2686e-04
+Iteration  2 : RMS = 8.2048e-05
+Iteration  3 : RMS = 3.1898e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9615e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.0861e-04
+Iteration  1 : RMS = 1.4433e-04
+Iteration  2 : RMS = 2.4611e-04
+Iteration  3 : RMS = 1.6337e-04
+Iteration  4 : RMS = 1.7643e-04
+Iteration  5 : RMS = 1.3445e-04
+Iteration  6 : RMS = 1.7485e-04
+Iteration  7 : RMS = 1.4794e-04
+Iteration  8 : RMS = 1.8181e-04
+Iteration  9 : RMS = 1.6109e-04
+Iteration  10 : RMS = 5.7657e-05
+Iterations converged
+
+GF(3,3):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0985e-03
+Iteration  1 : RMS = 7.9731e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2652e-03
+Iteration  1 : RMS = 3.0506e-04
+Iteration  2 : RMS = 8.9595e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 4.5516e-04
+Iteration  1 : RMS = 8.2210e-04
+Iteration  2 : RMS = 9.9845e-04
+Iteration  3 : RMS = 2.5271e-04
+Iteration  4 : RMS = 1.4400e-04
+Iteration  5 : RMS = 2.0399e-04
+Iteration  6 : RMS = 1.5012e-04
+Iteration  7 : RMS = 9.1829e-05
+Iteration  8 : RMS = 4.6940e-05
+Iteration  9 : RMS = 3.1406e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 3.6568e-04
+Iteration  1 : RMS = 2.2387e-04
+Iteration  2 : RMS = 1.2310e-04
+Iteration  3 : RMS = 7.0666e-05
+Iteration  4 : RMS = 3.6828e-05
+Iterations converged
+
+GF(4,4):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0985e-03
+Iteration  1 : RMS = 7.9731e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2652e-03
+Iteration  1 : RMS = 3.0506e-04
+Iteration  2 : RMS = 8.9595e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 4.5516e-04
+Iteration  1 : RMS = 8.2210e-04
+Iteration  2 : RMS = 9.9845e-04
+Iteration  3 : RMS = 2.5271e-04
+Iteration  4 : RMS = 1.4400e-04
+Iteration  5 : RMS = 2.0399e-04
+Iteration  6 : RMS = 1.5012e-04
+Iteration  7 : RMS = 9.1829e-05
+Iteration  8 : RMS = 4.6940e-05
+Iteration  9 : RMS = 3.1406e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 3.6568e-04
+Iteration  1 : RMS = 2.2387e-04
+Iteration  2 : RMS = 1.2310e-04
+Iteration  3 : RMS = 7.0666e-05
+Iteration  4 : RMS = 3.6828e-05
+Iterations converged
+
+GF(5,5):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.99946523895e-05
+Iteration  0 : RMS = 7.3458e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 8.0546e-04
+Iteration  1 : RMS = 2.2198e-04
+Iteration  2 : RMS = 4.5799e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  1.20933390643e-05
+Iteration  0 : RMS = 2.6430e-05
+Iteration  1 : RMS = 4.2548e-05
+Iteration  2 : RMS = 9.4685e-05
+Iteration  3 : RMS = 3.0778e-05
+Iteration  4 : RMS = 1.0279e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 8.9239e-05
+Iteration  1 : RMS = 5.5816e-05
+Iteration  2 : RMS = 5.3799e-05
+Iteration  3 : RMS = 8.6398e-05
+Iteration  4 : RMS = 9.4412e-05
+Iteration  5 : RMS = 3.4231e-05
+Iteration  6 : RMS = 2.2070e-05
+Iteration  7 : RMS = 2.0397e-05
+Iteration  8 : RMS = 1.0107e-05
+Iterations converged
+Density of states (interacting):              0.19883599523
+
+Summary for Omega (real, imag):   -1.50000    0.00000
+Density of states (mean-field):              0.154066417232
+
+Omega value (real, imag):  -1.485 0.0
+
+GF(0,0):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  2.26557986682e-05
+Iteration  0 : RMS = 1.0160e-04
+Iteration  1 : RMS = 1.3154e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 3.2940e-04
+Iteration  1 : RMS = 1.9801e-04
+Iteration  2 : RMS = 5.4913e-05
+Iteration  3 : RMS = 1.7997e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.99340693984e-05
+Iteration  0 : RMS = 2.6908e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.4248e-04
+Iteration  1 : RMS = 2.7065e-04
+Iteration  2 : RMS = 1.2045e-04
+Iteration  3 : RMS = 4.6413e-05
+Iterations converged
+
+GF(1,1):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1176e-04
+Iteration  1 : RMS = 6.3444e-05
+Iteration  2 : RMS = 3.0075e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.3536e-04
+Iteration  1 : RMS = 2.3022e-04
+Iteration  2 : RMS = 8.3899e-05
+Iteration  3 : RMS = 3.2694e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9420e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.2501e-04
+Iteration  1 : RMS = 1.4712e-04
+Iteration  2 : RMS = 2.6194e-04
+Iteration  3 : RMS = 1.9065e-04
+Iteration  4 : RMS = 1.9779e-04
+Iteration  5 : RMS = 1.5148e-04
+Iteration  6 : RMS = 2.2748e-04
+Iteration  7 : RMS = 1.7192e-04
+Iteration  8 : RMS = 1.8803e-04
+Iteration  9 : RMS = 1.3154e-04
+Iteration  10 : RMS = 6.2166e-05
+Iterations converged
+
+GF(2,2):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1176e-04
+Iteration  1 : RMS = 6.3444e-05
+Iteration  2 : RMS = 3.0075e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.3536e-04
+Iteration  1 : RMS = 2.3022e-04
+Iteration  2 : RMS = 8.3899e-05
+Iteration  3 : RMS = 3.2694e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9420e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.2501e-04
+Iteration  1 : RMS = 1.4712e-04
+Iteration  2 : RMS = 2.6194e-04
+Iteration  3 : RMS = 1.9065e-04
+Iteration  4 : RMS = 1.9779e-04
+Iteration  5 : RMS = 1.5148e-04
+Iteration  6 : RMS = 2.2748e-04
+Iteration  7 : RMS = 1.7192e-04
+Iteration  8 : RMS = 1.8803e-04
+Iteration  9 : RMS = 1.3154e-04
+Iteration  10 : RMS = 6.2166e-05
+Iterations converged
+
+GF(3,3):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0953e-03
+Iteration  1 : RMS = 8.0328e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2782e-03
+Iteration  1 : RMS = 3.0659e-04
+Iteration  2 : RMS = 9.0635e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 5.0197e-04
+Iteration  1 : RMS = 8.7224e-04
+Iteration  2 : RMS = 1.2466e-03
+Iteration  3 : RMS = 3.2718e-04
+Iteration  4 : RMS = 1.6979e-04
+Iteration  5 : RMS = 2.2918e-04
+Iteration  6 : RMS = 2.0415e-04
+Iteration  7 : RMS = 1.3633e-04
+Iteration  8 : RMS = 6.7879e-05
+Iteration  9 : RMS = 4.8180e-05
+Iteration  10 : RMS = 9.6207e-06
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 9.6038e-05
+Iteration  1 : RMS = 8.9151e-05
+Iteration  2 : RMS = 5.4703e-05
+Iteration  3 : RMS = 3.6254e-05
+Iterations converged
+
+GF(4,4):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0953e-03
+Iteration  1 : RMS = 8.0328e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2782e-03
+Iteration  1 : RMS = 3.0659e-04
+Iteration  2 : RMS = 9.0635e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 5.0197e-04
+Iteration  1 : RMS = 8.7224e-04
+Iteration  2 : RMS = 1.2466e-03
+Iteration  3 : RMS = 3.2718e-04
+Iteration  4 : RMS = 1.6979e-04
+Iteration  5 : RMS = 2.2918e-04
+Iteration  6 : RMS = 2.0415e-04
+Iteration  7 : RMS = 1.3633e-04
+Iteration  8 : RMS = 6.7879e-05
+Iteration  9 : RMS = 4.8180e-05
+Iteration  10 : RMS = 9.6207e-06
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 9.6038e-05
+Iteration  1 : RMS = 8.9151e-05
+Iteration  2 : RMS = 5.4703e-05
+Iteration  3 : RMS = 3.6254e-05
+Iterations converged
+
+GF(5,5):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.99946523895e-05
+Iteration  0 : RMS = 7.3235e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 8.0513e-04
+Iteration  1 : RMS = 2.2307e-04
+Iteration  2 : RMS = 4.6150e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  1.20933390643e-05
+Iteration  0 : RMS = 2.5404e-05
+Iteration  1 : RMS = 3.5183e-05
+Iteration  2 : RMS = 8.1425e-05
+Iteration  3 : RMS = 3.0082e-05
+Iteration  4 : RMS = 9.6862e-06
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 9.4221e-05
+Iteration  1 : RMS = 5.3483e-05
+Iteration  2 : RMS = 5.1596e-05
+Iteration  3 : RMS = 7.6827e-05
+Iteration  4 : RMS = 8.7510e-05
+Iteration  5 : RMS = 3.2058e-05
+Iteration  6 : RMS = 2.0779e-05
+Iteration  7 : RMS = 1.8197e-05
+Iteration  8 : RMS = 9.8529e-06
+Iterations converged
+Density of states (interacting):              0.211255367728
+
+Summary for Omega (real, imag):   -1.48500    0.00000
+Density of states (mean-field):              0.158884128318
+
+Omega value (real, imag):  -1.47 0.0
+
+GF(0,0):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  2.26557986682e-05
+Iteration  0 : RMS = 1.0089e-04
+Iteration  1 : RMS = 1.3170e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 3.2870e-04
+Iteration  1 : RMS = 1.9860e-04
+Iteration  2 : RMS = 5.5362e-05
+Iteration  3 : RMS = 1.8339e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.99340693984e-05
+Iteration  0 : RMS = 2.6319e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.1389e-04
+Iteration  1 : RMS = 2.4974e-04
+Iteration  2 : RMS = 1.2039e-04
+Iteration  3 : RMS = 4.2669e-05
+Iterations converged
+
+GF(1,1):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1027e-04
+Iteration  1 : RMS = 6.2961e-05
+Iteration  2 : RMS = 3.0367e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.4169e-04
+Iteration  1 : RMS = 2.3366e-04
+Iteration  2 : RMS = 8.5802e-05
+Iteration  3 : RMS = 3.3509e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9232e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.4356e-04
+Iteration  1 : RMS = 1.5065e-04
+Iteration  2 : RMS = 2.7759e-04
+Iteration  3 : RMS = 2.2243e-04
+Iteration  4 : RMS = 2.2289e-04
+Iteration  5 : RMS = 1.6662e-04
+Iteration  6 : RMS = 2.7847e-04
+Iteration  7 : RMS = 1.8521e-04
+Iteration  8 : RMS = 1.8132e-04
+Iteration  9 : RMS = 1.0108e-04
+Iteration  10 : RMS = 6.5269e-05
+Iterations converged
+
+GF(2,2):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
+Iteration  0 : RMS = 2.1027e-04
+Iteration  1 : RMS = 6.2961e-05
+Iteration  2 : RMS = 3.0367e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 5.4169e-04
+Iteration  1 : RMS = 2.3366e-04
+Iteration  2 : RMS = 8.5802e-05
+Iteration  3 : RMS = 3.3509e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.94288122572e-05
+Iteration  0 : RMS = 3.9232e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 2.4356e-04
+Iteration  1 : RMS = 1.5065e-04
+Iteration  2 : RMS = 2.7759e-04
+Iteration  3 : RMS = 2.2243e-04
+Iteration  4 : RMS = 2.2289e-04
+Iteration  5 : RMS = 1.6662e-04
+Iteration  6 : RMS = 2.7847e-04
+Iteration  7 : RMS = 1.8521e-04
+Iteration  8 : RMS = 1.8132e-04
+Iteration  9 : RMS = 1.0108e-04
+Iteration  10 : RMS = 6.5269e-05
+Iterations converged
+
+GF(3,3):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0920e-03
+Iteration  1 : RMS = 8.0938e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2916e-03
+Iteration  1 : RMS = 3.0816e-04
+Iteration  2 : RMS = 9.1690e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 5.5594e-04
+Iteration  1 : RMS = 9.2241e-04
+Iteration  2 : RMS = 1.5644e-03
+Iteration  3 : RMS = 4.3072e-04
+Iteration  4 : RMS = 2.0513e-04
+Iteration  5 : RMS = 2.5752e-04
+Iteration  6 : RMS = 2.7165e-04
+Iteration  7 : RMS = 2.0068e-04
+Iteration  8 : RMS = 1.0016e-04
+Iteration  9 : RMS = 7.6607e-05
+Iteration  10 : RMS = 1.6417e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 1.7342e-04
+Iteration  1 : RMS = 1.5400e-04
+Iteration  2 : RMS = 8.9684e-05
+Iteration  3 : RMS = 5.9474e-05
+Iteration  4 : RMS = 3.8918e-05
+Iterations converged
+
+GF(4,4):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.93980143383e-05
+Iteration  0 : RMS = 1.0920e-03
+Iteration  1 : RMS = 8.0938e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 1.2916e-03
+Iteration  1 : RMS = 3.0816e-04
+Iteration  2 : RMS = 9.1690e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  3.93034477876e-05
+Iteration  0 : RMS = 5.5594e-04
+Iteration  1 : RMS = 9.2241e-04
+Iteration  2 : RMS = 1.5644e-03
+Iteration  3 : RMS = 4.3072e-04
+Iteration  4 : RMS = 2.0513e-04
+Iteration  5 : RMS = 2.5752e-04
+Iteration  6 : RMS = 2.7165e-04
+Iteration  7 : RMS = 2.0068e-04
+Iteration  8 : RMS = 1.0016e-04
+Iteration  9 : RMS = 7.6607e-05
+Iteration  10 : RMS = 1.6417e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 1.7342e-04
+Iteration  1 : RMS = 1.5400e-04
+Iteration  2 : RMS = 8.9684e-05
+Iteration  3 : RMS = 5.9474e-05
+Iteration  4 : RMS = 3.8918e-05
+Iterations converged
+
+GF(5,5):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  9.99946523895e-05
+Iteration  0 : RMS = 7.3013e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 8.0482e-04
+Iteration  1 : RMS = 2.2417e-04
+Iteration  2 : RMS = 4.6510e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  1.20933390643e-05
+Iteration  0 : RMS = 2.4505e-05
+Iteration  1 : RMS = 2.8818e-05
+Iteration  2 : RMS = 6.8184e-05
+Iteration  3 : RMS = 2.9721e-05
+Iteration  4 : RMS = 9.2432e-06
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 1.0052e-04
+Iteration  1 : RMS = 5.1264e-05
+Iteration  2 : RMS = 4.8346e-05
+Iteration  3 : RMS = 6.6057e-05
+Iteration  4 : RMS = 8.0112e-05
+Iteration  5 : RMS = 3.0820e-05
+Iteration  6 : RMS = 1.9461e-05
+Iteration  7 : RMS = 1.5362e-05
+Iteration  8 : RMS = 9.3245e-06
+Iterations converged
+Density of states (interacting):              0.226033801431
+
+Summary for Omega (real, imag):   -1.47000    0.00000
+Density of states (mean-field):              0.163942857537
+
+Omega value (real, imag):  -1.455 0.0
+
+GF(0,0):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  2.26557986682e-05
+Iteration  0 : RMS = 1.0018e-04
+Iteration  1 : RMS = 1.3186e-05
+Iterations converged
+
+Iterating real part of the Green's function (addition):
+Iteration  0 : RMS = 3.2799e-04
+Iteration  1 : RMS = 1.9914e-04
+Iteration  2 : RMS = 5.5814e-05
+Iteration  3 : RMS = 1.8689e-05
+Iterations converged
+
+Iterating imaginary part of the Green's function (removal):
+Convergence threshold:  9.99340693984e-05
+Iteration  0 : RMS = 2.5766e-05
+Iterations converged
+
+Iterating real part of the Green's function (removal):
+Iteration  0 : RMS = 1.8818e-04
+Iteration  1 : RMS = 2.2393e-04
+Iteration  2 : RMS = 1.2067e-04
+Iteration  3 : RMS = 4.0386e-05
+Iterations converged
+
+GF(1,1):
+
+Iterating imaginary part of the Green's function (addition):
+Convergence threshold:  3.87952932128e-05
