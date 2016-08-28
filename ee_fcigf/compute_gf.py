@@ -57,15 +57,18 @@ def compute_Ax(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, iomega, delta, e_
 
 
 # Solve conjugate gradients for Ax = b, where Ax = ([H - E_0] * [H - E_0] + [iomega + delta] * [iomega + delta]) * |x>
-def solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, iomega, delta, e_zero, vec, b, tol, maxiter):
+def solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, iomega, delta, e_zero, vec, b, fcivec, tol, maxiter):
 
-    print  "NORM Xi :", np.dot(np.ravel(vec), np.ravel(vec))
+    ov = pow(np.dot(np.ravel(fcivec),np.ravel(fcivec)),0.5)
+    vec -= (np.dot(np.ravel(vec),np.ravel(fcivec))/ov)*fcivec
 
     # Ax = ([H - E_0] * [H - E_0] + [iomega + delta] * [iomega + delta]) * |x>
     Ax = compute_Ax(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, iomega, delta, e_zero, vec)
 
     # Compute residual
     r = b - Ax
+
+    r -= (np.dot(np.ravel(r),np.ravel(fcivec))/ov)*fcivec
 
     rms = np.linalg.norm(r)/np.sqrt(r.size)
 
@@ -86,6 +89,8 @@ def solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, io
         # q = A * d
         q = Ad
 
+        q -= (np.dot(np.ravel(q),np.ravel(fcivec))/ov)*fcivec
+
         # alpha = delta_new / d . q
         alpha = delta_new / (np.dot(np.ravel(d), np.ravel(q)))
 
@@ -100,6 +105,8 @@ def solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, io
         beta = delta_new/delta_old
 
         d = r + beta * d
+
+        d -= (np.dot(np.ravel(d),np.ravel(fcivec))/ov)*fcivec
 
         # Compute RMS of the residual
         rms = np.linalg.norm(r)/np.sqrt(r.size)
@@ -172,7 +179,7 @@ def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, 
 
     # Solve for imaginary part
     # ([H - E_0] * [H - E_0] + [iomega + delta] * [iomega + delta]) * |I> = - (iomega + delta) * a_q|>
-    ivec = solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, -romega, iomega, delta, e_zero, ivec, b, tol, maxiter)
+    ivec = solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, -romega, iomega, delta, e_zero, ivec, b, fcivec, tol, maxiter)
  
     # Iterate real part of the Green's function
     #print "\nIterating real part of the Green's function (removal):"
