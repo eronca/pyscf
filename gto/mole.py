@@ -5,6 +5,7 @@
 #
 
 import os, sys
+import platform
 import gc
 import time
 import math
@@ -173,10 +174,11 @@ def format_atom(atoms, origin=0, axes=1, unit='Ang'):
     >>> gto.format_atom(['9,0,0,0', (1, (0, 0, 1))], origin=(1,1,1))
     [['F', [-1.0, -1.0, -1.0]], ['H', [-1, -1, 0]]]
     '''
-    if unit.startswith(('B','b','au','AU')):
-        convert = 1
-    elif unit.startswith(('A','a')):
-        convert = 1./param.BOHR
+    if isinstance(unit, str):
+        if unit.startswith(('B','b','au','AU')):
+            convert = 1
+        else: #if unit.startswith(('A','a')):
+            convert = 1./param.BOHR
     else:
         convert = 1./unit
     fmt_atoms = []
@@ -1169,6 +1171,24 @@ def offset_nr_by_atom(mol):
     aorange.append((b0, mol.nbas, p0, p1))
     return aorange
 
+def offset_2c_by_atom(mol):
+    '''2-component AO offset for each atom.  Return a list, each item
+    of the list gives (start-shell-id, stop-shell-id, start-AO-id, stop-AO-id)
+    '''
+    aorange = []
+    p0 = p1 = 0
+    b0 = b1 = 0
+    ia0 = 0
+    for ib in range(mol.nbas):
+        if ia0 != mol.bas_atom(ib):
+            aorange.append((b0, ib, p0, p1))
+            ia0 = mol.bas_atom(ib)
+            p0 = p1
+            b0 = ib
+        p1 += mol.bas_len_spinor(ib) * mol.bas_nctr(ib)
+    aorange.append((b0, mol.nbas, p0, p1))
+    return aorange
+
 def same_mol(mol1, mol2, tol=1e-5, cmp_basis=True, ignore_chiral=False):
     '''Compare the two molecules whether they have the same structure.
 
@@ -1744,7 +1764,7 @@ Note when symmetry attributes is assigned, the molecule needs to be put in the p
             except IOError:
                 logger.warn(self, 'input file does not exist')
 
-        self.stdout.write('System: %s\n' % str(os.uname()))
+        self.stdout.write('System: %s\n' % str(platform.uname()))
         self.stdout.write('Date: %s\n' % time.ctime())
         try:
             pyscfdir = os.path.abspath(os.path.join(__file__, '..', '..'))
@@ -2118,6 +2138,11 @@ Note when symmetry attributes is assigned, the molecule needs to be put in the p
         ptr = self._bas[bas_id,PTR_EXP]
         return self._env[ptr:ptr+nprim]
 
+    def _libcint_ctr_coeff(self, bas_id):
+        nprim = self.bas_nprim(bas_id)
+        nctr = self.bas_nctr(bas_id)
+        ptr = self._bas[bas_id,PTR_COEFF]
+        return self._env[ptr:ptr+nprim*nctr].reshape(nctr,nprim).T
     def bas_ctr_coeff(self, bas_id):
         r'''Contract coefficients (ndarray) of the given shell
 
@@ -2127,16 +2152,17 @@ Note when symmetry attributes is assigned, the molecule needs to be put in the p
 
         Examples:
 
-        >>> mol.build(atom='H 0 0 0; Cl 0 0 1.1', basis='cc-pvdz')
-        >>> mol.bas_ctr_coeff(3)
-        [[ 0.34068924]
-         [ 0.57789106]
-         [ 0.65774031]]
+        >>> mol.M(atom='H 0 0 0; Cl 0 0 1.1', basis='cc-pvdz')
+        >>> mol.bas_ctr_coeff(0)
+        [[ 10.03400444]
+         [  4.1188704 ]
+         [  1.53971186]]
         '''
-        nprim = self.bas_nprim(bas_id)
-        nctr = self.bas_nctr(bas_id)
-        ptr = self._bas[bas_id,PTR_COEFF]
-        return self._env[ptr:ptr+nprim*nctr].reshape(nctr,nprim).T
+        l = self.bas_angular(bas_id)
+        es = self.bas_exp(bas_id)
+        cs = self._libcint_ctr_coeff(bas_id)
+        cs = numpy.einsum('pi,p->pi', cs, 1/gto_norm(l, es))
+        return cs
 
     def bas_len_spinor(self, bas_id):
         '''The number of spinor associated with given basis
@@ -2309,12 +2335,15 @@ Note when symmetry attributes is assigned, the molecule needs to be put in the p
     search_ao_r = search_ao_r
 
     offset_nr_by_atom = offset_nr_by_atom
+    offset_2c_by_atom = offset_2c_by_atom
 
     @pyscf.lib.with_doc(spinor_labels.__doc__)
     def spinor_labels(self):
         return spinor_labels(self)
 
     condense_to_shell = condense_to_shell
+
+    __add__ = conc_mol
 
 _ELEMENTDIC = dict((k.upper(),v) for k,v in param.ELEMENTS_PROTON.items())
 

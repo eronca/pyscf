@@ -86,7 +86,7 @@ def density_fit(mf, auxbasis='weigend+etb', with_df=None):
             if self.with_df:
                 if mol is None: mol = self.mol
                 if dm is None: dm = self.make_rdm1()
-                return self.with_df.get_jk(mol, dm, hermi)
+                return self.with_df.get_jk(dm, hermi)
             else:
                 return mf_class.get_jk(self, mol, dm, hermi)
 
@@ -94,7 +94,7 @@ def density_fit(mf, auxbasis='weigend+etb', with_df=None):
             if self.with_df:
                 if mol is None: mol = self.mol
                 if dm is None: dm = self.make_rdm1()
-                return self.with_df.get_jk(mol, dm, hermi, with_k=False)[0]
+                return self.with_df.get_jk(dm, hermi, with_k=False)[0]
             else:
                 return mf_class.get_j(self, mol, dm, hermi)
 
@@ -102,7 +102,7 @@ def density_fit(mf, auxbasis='weigend+etb', with_df=None):
             if self.with_df:
                 if mol is None: mol = self.mol
                 if dm is None: dm = self.make_rdm1()
-                return self.with_df.get_jk(mol, dm, hermi, with_j=False)[1]
+                return self.with_df.get_jk(dm, hermi, with_j=False)[1]
             else:
                 return mf_class.get_k(self, mol, dm, hermi)
 
@@ -126,7 +126,7 @@ def density_fit(mf, auxbasis='weigend+etb', with_df=None):
     return DFHF()
 
 
-def get_jk(dfobj, mol, dms, hermi=1, vhfopt=None, with_j=True, with_k=True):
+def get_jk(dfobj, dms, hermi=1, vhfopt=None, with_j=True, with_k=True):
     t0 = t1 = (time.clock(), time.time())
     log = logger.Logger(dfobj.stdout, dfobj.verbose)
 
@@ -139,9 +139,9 @@ def get_jk(dfobj, mol, dms, hermi=1, vhfopt=None, with_j=True, with_k=True):
         nset = len(dms)
     nao = dms[0].shape[0]
 
-    fmmm = _ri._fpointer('RIhalfmmm_nr_s2_bra')
+    fmmm = _ri.libri.RIhalfmmm_nr_s2_bra
     fdrv = _ao2mo.libao2mo.AO2MOnr_e2_drv
-    ftrans = _ao2mo._fpointer('AO2MOtranse2_nr_s2')
+    ftrans = _ao2mo.libao2mo.AO2MOtranse2_nr_s2
 
     vj = numpy.zeros((nset,nao,nao))
     vk = numpy.zeros((nset,nao,nao))
@@ -204,7 +204,7 @@ def get_jk(dfobj, mol, dms, hermi=1, vhfopt=None, with_j=True, with_k=True):
     else:
         #:vk = numpy.einsum('pij,jk->pki', cderi, dm)
         #:vk = numpy.einsum('pki,pkj->ij', cderi, vk)
-        fcopy = _ri._fpointer('RImmm_nr_s2_copy')
+        fcopy = _ri.libri.RImmm_nr_s2_copy
         rargs = (ctypes.c_int(nao),
                  ctypes.c_int(0), ctypes.c_int(nao),
                  ctypes.c_int(0), ctypes.c_int(0), null, ctypes.c_int(0))
@@ -240,19 +240,20 @@ def get_jk(dfobj, mol, dms, hermi=1, vhfopt=None, with_j=True, with_k=True):
     return vj, vk
 
 
-def r_get_jk(dfobj, mol, dms, hermi=1):
+def r_get_jk(dfobj, dms, hermi=1):
     '''Relativistic density fitting JK'''
     t0 = t1 = (time.clock(), time.time())
+    mol = dfobj.mol
     n2c = mol.nao_2c()
     c1 = .5 / mol.light_speed
 
     def fjk(dm):
-        fmmm = _ri._fpointer('RIhalfmmm_r_s2_bra_noconj')
+        fmmm = _ri.libri.RIhalfmmm_r_s2_bra_noconj
         fdrv = _ao2mo.libao2mo.AO2MOr_e2_drv
-        ftrans = _ri._fpointer('RItranse2_r_s2')
+        ftrans = _ri.libri.RItranse2_r_s2
         vj = numpy.zeros_like(dm)
         vk = numpy.zeros_like(dm)
-        fcopy = _ri._fpointer('RImmm_r_s2_transpose')
+        fcopy = _ri.libri.RImmm_r_s2_transpose
         rargs = (ctypes.c_int(n2c),
                  ctypes.c_int(0), ctypes.c_int(n2c),
                  ctypes.c_int(0), ctypes.c_int(0))

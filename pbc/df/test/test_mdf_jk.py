@@ -6,6 +6,8 @@ from pyscf.pbc import scf as pscf
 import pyscf.pbc
 from pyscf.pbc.df import mdf
 from pyscf.pbc.df import mdf_jk
+#from mpi4pyscf.pbc.df import mdf
+#from mpi4pyscf.pbc.df import mdf_jk
 pyscf.pbc.DEBUG = False
 
 L = 5.
@@ -50,6 +52,15 @@ class KnowValues(unittest.TestCase):
         self.assertAlmostEqual(ej1, 242.17738846073865, 9)
         self.assertAlmostEqual(ek1, 280.27434674577881, 9)
 
+        numpy.random.seed(1)
+        kpt = numpy.random.random(3)
+        mydf = mdf.MDF(cell, [kpt])
+        vj, vk = mydf.get_jk(dm, 0, kpt)
+        ej1 = numpy.einsum('ij,ji->', vj, dm)
+        ek1 = numpy.einsum('ij,ji->', vk, dm)
+        self.assertAlmostEqual(ej1, 240.96357256500787, 9)
+        self.assertAlmostEqual(ek1, 691.41111361623132, 9)
+
     def test_hcore(self):
         mf = pscf.RHF(cell)
         odf = mdf.MDF(cell)
@@ -68,18 +79,11 @@ class KnowValues(unittest.TestCase):
         jkdf = mdf.MDF(cell)
         jkdf.auxbasis = 'weigend'
         jkdf.gs = (5,)*3
-        mf = mdf_jk.density_fit(mf0, with_df=jkdf)
-        vj0, vk0 = mf.get_jk(cell, dm, hermi=0)
+        vj0, vk0 = jkdf.get_jk(dm, hermi=0, exxdiv=None)
         ej0 = numpy.einsum('ij,ji->', vj0, dm)
         ek0 = numpy.einsum('ij,ji->', vk0, dm)
-        mf = mdf_jk.density_fit(mf0, with_df=jkdf)
-        vj1, vk1 = mf.get_jk(cell, dm, hermi=0)
-        ej1 = numpy.einsum('ij,ji->', vj1, dm)
-        ek1 = numpy.einsum('ij,ji->', vk1, dm)
-        self.assertTrue(numpy.allclose(vj0, vj1))
-        self.assertTrue(numpy.allclose(vk0, vk1))
-        self.assertAlmostEqual(ej1, 242.17214791834408, 9)
-        self.assertAlmostEqual(ek1, 280.69967132047987, 9)
+        self.assertAlmostEqual(ej0, 242.17214791834408, 9)
+        self.assertAlmostEqual(ek0, 280.69967132048043, 9)
 
     def test_jk_metric(self):
         numpy.random.seed(12)
@@ -90,8 +94,7 @@ class KnowValues(unittest.TestCase):
         jkdf.metric = 'S'
         jkdf.auxbasis = 'weigend'
         jkdf.gs = (5,)*3
-        mf = mdf_jk.density_fit(mf0, with_df=jkdf)
-        vj1, vk1 = mf.get_jk(cell, dm)
+        vj1, vk1 = jkdf.get_jk(dm, exxdiv=None)
         ej1 = numpy.einsum('ij,ji->', vj1, dm)
         ek1 = numpy.einsum('ij,ji->', vk1, dm)
         self.assertAlmostEqual(ej1, 242.15871646261877, 9)
@@ -101,8 +104,7 @@ class KnowValues(unittest.TestCase):
         jkdf.metric = 'T'
         jkdf.auxbasis = 'weigend'
         jkdf.gs = (5,)*3
-        mf = mdf_jk.density_fit(mf0, with_df=jkdf)
-        vj1, vk1 = mf.get_jk(cell, dm)
+        vj1, vk1 = jkdf.get_jk(dm, exxdiv=None)
         ej1 = numpy.einsum('ij,ji->', vj1, dm)
         ek1 = numpy.einsum('ij,ji->', vk1, dm)
         self.assertAlmostEqual(ej1, 242.17738846073865, 9)
@@ -137,18 +139,6 @@ class KnowValues(unittest.TestCase):
         self.assertAlmostEqual(ej1, 242.17554856213894, 9)
         self.assertAlmostEqual(ek1, 280.27281092754305, 9)
 
-        jkdf = mdf.MDF(cell)
-        jkdf.metric = 'T'
-        jkdf.approx_sr_level = 4
-        jkdf.auxbasis = 'weigend'
-        jkdf.gs = (5,)*3
-        mf = mdf_jk.density_fit(mf0, with_df=jkdf)
-        vj1, vk1 = mf.get_jk(cell, dm)
-        ej1 = numpy.einsum('ij,ji->', vj1, dm)
-        ek1 = numpy.einsum('ij,ji->', vk1, dm)
-        self.assertAlmostEqual(ej1, 242.17944693058223, 9)
-        self.assertAlmostEqual(ek1, 280.27697544586277, 9)
-
     def test_j_kpts(self):
         numpy.random.seed(1)
         nao = cell.nao_nr()
@@ -181,14 +171,13 @@ class KnowValues(unittest.TestCase):
         self.assertAlmostEqual(finger(vk[3]), (-0.79608989192947033+0.012002060547759118j), 9)
 
     def test_k_kpts_2(self):
-        import pyscf.pbc.tools.pyscf_ase as pyscf_ase
         cell = pgto.Cell()
         cell.atom = 'He 1. .5 .5; He .1 1.3 2.1'
         cell.basis = {'He': [(0, (2.5, 1)), (0, (1., 1))]}
         cell.h = numpy.eye(3) * 2.5
         cell.gs = [5] * 3
         cell.build()
-        kpts = pyscf_ase.make_kpts(cell, (2,2,2))
+        kpts = cell.make_kpts((2,2,2))
 
         numpy.random.seed(1)
         nao = cell.nao_nr()

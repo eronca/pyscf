@@ -3,9 +3,9 @@ PySCF
 
 Python module for quantum chemistry
 
-2016-08-05
+2016-09-14
 
-* [1.2 alpha] [Stable release 1.1](https://github.com/sunqm/pyscf/tree/1.1)
+* [1.2 beta](../master/doc/whatsnew/1.2.rst) [Stable release 1.1](https://github.com/sunqm/pyscf/tree/1.1)
 * [Changelog](../master/CHANGELOG)
 * [Documentation](http://www.pyscf.org) ([PDF](http://www.sunqm.net/pyscf/files/pdf/PySCF-1.1.pdf))
 * [Installation](#installation)
@@ -20,7 +20,7 @@ Installation
     - Python 2.6, 2.7, 3.2, 3.3, 3.4
     - Numpy 1.8.0 or higher
     - Scipy 0.10 or higher (0.12.0 or higher for python 3.3, 3.4)
-    - h5py 1.3.0 or higher (requires HDF5 1.8.4 or higher)
+    - h5py 2.2.0 or higher (requires HDF5 1.8.4 or higher)
 
 * Compile core module
 

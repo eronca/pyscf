@@ -8,7 +8,6 @@ Dirac Hartree-Fock
 '''
 
 import ctypes
-import _ctypes
 import time
 from functools import reduce
 import numpy
@@ -201,7 +200,7 @@ def time_reversal_matrix(mol, mat):
     tmat[:,sign_mask] *= -1
     return tmat.T
 
-def analyze(mf, verbose=logger.DEBUG):
+def analyze(mf, verbose=logger.DEBUG, **kwargs):
     #from pyscf.tools import dump_mat
     if isinstance(verbose, logger.Logger):
         log = verbose
@@ -273,6 +272,7 @@ class UHF(hf.SCF):
         hf.SCF.dump_flags(self)
         logger.info(self, 'with_ssss %s, with_gaunt %s, with_breit %s',
                     self.with_ssss, self.with_gaunt, self.with_breit)
+        return self
 
     def get_hcore(self, mol=None):
         if mol is None:
@@ -340,8 +340,7 @@ class UHF(hf.SCF):
     def init_direct_scf(self, mol=None):
         if mol is None: mol = self.mol
         def set_vkscreen(opt, name):
-            opt._this.contents.r_vkscreen = \
-                ctypes.c_void_p(_ctypes.dlsym(_vhf.libcvhf._handle, name))
+            opt._this.contents.r_vkscreen = _vhf._fpointer(name)
         opt_llll = _vhf.VHFOpt(mol, 'cint2e', 'CVHFrkbllll_prescreen',
                                'CVHFrkbllll_direct_scf',
                                'CVHFrkbllll_direct_scf_dm')

@@ -26,7 +26,7 @@ from pyscf.scf import chkfile
 
 # mo_energy, mo_coeff, mo_occ are all in nosymm representation
 
-def analyze(mf, verbose=logger.DEBUG):
+def analyze(mf, verbose=logger.DEBUG, **kwargs):
     '''Analyze the given SCF object:  print orbital energies, occupancies;
     print orbital coefficients; Occupancy for each irreps; Mulliken population analysis
     '''
@@ -73,7 +73,7 @@ def analyze(mf, verbose=logger.DEBUG):
         log.debug(' ** MO coefficients (expansion on meta-Lowdin AOs) **')
         orth_coeff = orth.orth_ao(mol, 'meta_lowdin', s=ovlp_ao)
         c = reduce(numpy.dot, (orth_coeff.T, ovlp_ao, mo_coeff))
-        dump_mat.dump_rec(mf.stdout, c, label, molabel, start=1)
+        dump_mat.dump_rec(mf.stdout, c, label, molabel, start=1, **kwargs)
 
     dm = mf.make_rdm1(mo_coeff, mo_occ)
     return mf.mulliken_meta(mol, dm, s=ovlp_ao, verbose=log)
@@ -156,7 +156,7 @@ def _symmetrize_canonicalization_(mol, mo_energy, mo_coeff, s):
             idx = abs(mo_energy) > emin
             es.append(mo_energy[idx])
             cs.append(numpy.dot(mol.symm_orb[i], u[:,idx]))
-        es = numpy.hstack(es)
+        es = numpy.hstack(es).round(9)
         idx = numpy.argsort(es)
         assert(numpy.allclose(es[idx], esub))
         mo_coeff[:,degidx] = numpy.hstack(cs)[:,idx]
@@ -184,7 +184,7 @@ def check_irrep_nelec(mol, irrep_nelec, nelec):
             else:
                 neleca, nelecb = irrep_nelec[irname]
             norb = mol.symm_orb[i].shape[1]
-            if nelecb >= norb:
+            if neleca > norb or nelecb > norb:
                 msg =('More electrons than orbitals for irrep %s '
                       'nelec = %d + %d, norb = %d' %
                       (irname, neleca,nelecb, norb))
@@ -279,6 +279,23 @@ class RHF(hf.RHF):
         c = so2ao_mo_coeff(self.mol.symm_orb, cs)
         return e, c
 
+    def get_grad(self, mo_coeff, mo_occ, fock=None):
+        mol = self.mol
+        if fock is None:
+            dm1 = self.make_rdm1(mo_coeff, mo_occ)
+            fock = self.get_hcore(mol) + self.get_veff(self.mol, dm1)
+        orbsym = symm.label_orb_symm(self, mol.irrep_id, mol.symm_orb,
+                                     mo_coeff, self.get_ovlp(), False)
+        orbsym = numpy.asarray(orbsym)
+
+        occidx = mo_occ > 0
+        viridx = ~occidx
+        g = reduce(numpy.dot, (mo_coeff[:,viridx].T.conj(), fock,
+                               mo_coeff[:,occidx])) * 2
+        sym_allow = orbsym[viridx].reshape(-1,1) == orbsym[occidx]
+        g[~sym_allow] = 0
+        return g.ravel()
+
     def get_occ(self, mo_energy=None, mo_coeff=None, orbsym=None):
         ''' We assumed mo_energy are grouped by symmetry irreps, (see function
         self.eig). The orbitals are sorted after SCF.
@@ -306,7 +323,7 @@ class RHF(hf.RHF):
             ir_idx = numpy.where(orbsym == ir)[0]
             if irname in self.irrep_nelec:
                 n = self.irrep_nelec[irname]
-                occ_sort = numpy.argsort(mo_energy[ir_idx])
+                occ_sort = numpy.argsort(mo_energy[ir_idx].round(9))
                 occ_idx  = ir_idx[occ_sort[:n//2]]
                 mo_occ[occ_idx] = 2
                 nelec_fix += n
@@ -316,7 +333,7 @@ class RHF(hf.RHF):
         assert(nelec_float >= 0)
         if nelec_float > 0:
             rest_idx = numpy.hstack(rest_idx)
-            occ_sort = numpy.argsort(mo_energy[rest_idx])
+            occ_sort = numpy.argsort(mo_energy[rest_idx].round(9))
             occ_idx  = rest_idx[occ_sort[:nelec_float//2]]
             mo_occ[occ_idx] = 2
 
@@ -346,8 +363,8 @@ class RHF(hf.RHF):
         hf.RHF._finalize(self)
 
         # sort MOs wrt orbital energies, it should be done last.
-        o_sort = numpy.argsort(self.mo_energy[self.mo_occ>0])
-        v_sort = numpy.argsort(self.mo_energy[self.mo_occ==0])
+        o_sort = numpy.argsort(self.mo_energy[self.mo_occ>0 ].round(9))
+        v_sort = numpy.argsort(self.mo_energy[self.mo_occ==0].round(9))
         self.mo_energy = numpy.hstack((self.mo_energy[self.mo_occ>0][o_sort],
                                        self.mo_energy[self.mo_occ==0][v_sort]))
         self.mo_coeff = numpy.hstack((self.mo_coeff[:,self.mo_occ>0].take(o_sort, axis=1),
@@ -360,9 +377,9 @@ class RHF(hf.RHF):
                              self.mo_coeff, self.mo_occ, overwrite_mol=False)
         return self
 
-    def analyze(self, verbose=None):
+    def analyze(self, verbose=None, **kwargs):
         if verbose is None: verbose = self.verbose
-        return analyze(self, verbose)
+        return analyze(self, verbose, **kwargs)
 
     @lib.with_doc(get_irrep_nelec.__doc__)
     def get_irrep_nelec(self, mol=None, mo_coeff=None, mo_occ=None, s=None):
@@ -391,7 +408,7 @@ class HF1e(hf.SCF):
             e, c = hf.SCF.eig(self, h1e[ir], s1e[ir])
             cs.append(c)
             es.append(e)
-        e = numpy.hstack(es)
+        e = numpy.hstack(es).round(9)
         idx = numpy.argsort(e)
         self.mo_energy = e[idx]
         self.mo_coeff = so2ao_mo_coeff(self.mol.symm_orb, cs)[:,idx]
@@ -493,6 +510,30 @@ class ROHF(rohf.ROHF):
             f = adiis.update(s1e, dm[0], f)
         f = hf.level_shift(s1e, dm[0], f, level_shift_factor)
         return f
+
+    def get_grad(self, mo_coeff, mo_occ, fock=None):
+        mol = self.mol
+        if fock is None:
+            dm1 = self.make_rdm1(mo_coeff, mo_occ)
+            fock = self.get_hcore(mol) + self.get_veff(self.mol, dm1)
+        orbsym = symm.label_orb_symm(self, mol.irrep_id, mol.symm_orb,
+                                     mo_coeff, self.get_ovlp(), False)
+        orbsym = numpy.asarray(orbsym)
+        sym_allow = orbsym.reshape(-1,1) == orbsym
+
+        occidxa = mo_occ > 0
+        occidxb = mo_occ == 2
+        viridxa = ~occidxa
+        viridxb = ~occidxb
+        focka = reduce(numpy.dot, (mo_coeff.T, fock[0], mo_coeff))
+        fockb = reduce(numpy.dot, (mo_coeff.T, fock[1], mo_coeff))
+        uniq_var_a = viridxa.reshape(-1,1) & occidxa
+        uniq_var_b = viridxb.reshape(-1,1) & occidxb
+        g = numpy.zeros_like(focka)
+        g[uniq_var_a]  = focka[uniq_var_a]
+        g[uniq_var_b] += fockb[uniq_var_b]
+        g[~sym_allow] = 0
+        return g[uniq_var_a | uniq_var_b].ravel()
 
     def get_occ(self, mo_energy=None, mo_coeff=None, orbsym=None):
         if mo_energy is None: mo_energy = self.mo_energy
@@ -616,9 +657,9 @@ class ROHF(rohf.ROHF):
         rohf.ROHF._finalize(self)
 
         # sort MOs wrt orbital energies, it should be done last.
-        c_sort = numpy.argsort(self.mo_energy[self.mo_occ==2])
-        o_sort = numpy.argsort(self.mo_energy[self.mo_occ==1])
-        v_sort = numpy.argsort(self.mo_energy[self.mo_occ==0])
+        c_sort = numpy.argsort(self.mo_energy[self.mo_occ==2].round(9))
+        o_sort = numpy.argsort(self.mo_energy[self.mo_occ==1].round(9))
+        v_sort = numpy.argsort(self.mo_energy[self.mo_occ==0].round(9))
         self.mo_energy = numpy.hstack((self.mo_energy[self.mo_occ==2][c_sort],
                                        self.mo_energy[self.mo_occ==1][o_sort],
                                        self.mo_energy[self.mo_occ==0][v_sort]))
@@ -755,7 +796,6 @@ def _dump_mo_energy(mol, mo_energy, mo_occ, ehomo, elumo, orbsym, title='',
                 log.warn('!! %s%s LUMO %.15g < system HOMO %.15g',
                          title, irname, e_ir[nocc], ehomo)
         log.debug('   mo_energy = %s', e_ir)
-
 
 
 if __name__ == '__main__':

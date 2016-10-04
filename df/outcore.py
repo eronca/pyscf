@@ -5,7 +5,6 @@
 
 import time
 import ctypes
-import _ctypes
 import tempfile
 import numpy
 import scipy.linalg
@@ -24,8 +23,6 @@ from pyscf.df import _ri
 #
 
 libri = lib.load_library('libri')
-def _fpointer(name):
-    return ctypes.c_void_p(_ctypes.dlsym(libri._handle, name))
 
 def cholesky_eri(mol, erifile, auxbasis='weigend+etb', dataname='eri_mo', tmpdir=None,
                  int3c='cint3c2e_sph', aosym='s2ij', int2c='cint2c2e_sph', comp=1,
@@ -214,11 +211,11 @@ def general(mol, mo_coeffs, erifile, auxbasis='weigend+etb', dataname='eri_mo', 
     else:
         feri = h5py.File(erifile, 'w')
     if comp == 1:
-        chunks = (min(int(16e3/nmoj),naoaux), nmoj) # 128K
+        chunks = (min(int(64e3/nmoj),naoaux), nmoj) # 512K
         h5d_eri = feri.create_dataset(dataname, (naoaux,nij_pair), 'f8',
                                       chunks=chunks)
     else:
-        chunks = (1, min(int(16e3/nmoj),naoaux), nmoj) # 128K
+        chunks = (1, min(int(64e3/nmoj),naoaux), nmoj) # 512K
         h5d_eri = feri.create_dataset(dataname, (comp,naoaux,nij_pair), 'f8',
                                       chunks=chunks)
     aopairblks = len(fswap[dataname+'/0'])
@@ -270,11 +267,10 @@ def _guess_shell_ranges(mol, buflen, aosym):
     from pyscf.ao2mo.outcore import balance_segs
     ao_loc = mol.ao_loc_nr()
     nao = ao_loc[-1]
-    if aosym == 's2ij':
-        segs = [ao_loc[i+1]*(ao_loc[i+1]+1)//2 - ao_loc[i]*(ao_loc[i]+1)//2
-                for i in range(mol.nbas)]
+    if 's2' in aosym:
+        segs = ao_loc[1:]*(ao_loc[1:]+1)//2 - ao_loc[:-1]*(ao_loc[:-1]+1)//2
     else:
-        segs = [(ao_loc[i+1]-ao_loc[i])*nao for i in range(mol.nbas)]
+        segs = (ao_loc[1:]-ao_loc[:-1])*nao
     return balance_segs(segs, buflen)
 
 def _stand_sym_code(sym):

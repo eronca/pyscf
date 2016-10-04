@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+#
+# Author: Timothy Berkelbach <tim.berkelbach@gmail.com>
+#
+
 import time
 import numpy as np
 import scipy.linalg
@@ -12,7 +17,7 @@ Extension to scipy.linalg module developed for PBC branch.
 method = 'davidson'
 #method = 'arnoldi'
 
-VERBOSE = False 
+VERBOSE = False
 
 def eigs(matvec, size, nroots, Adiag=None, guess=False, verbose=logger.INFO):
     '''Davidson diagonalization method to solve A c = E c
@@ -30,7 +35,6 @@ def eigs(matvec, size, nroots, Adiag=None, guess=False, verbose=logger.INFO):
             conv, e, c, niter = davidson(matvec, size, nroots, Adiag, verbose)
         else:
             conv, e, c, niter = davidson_guess(matvec, size, nroots, Adiag)
-        #print "Davidson converged in %d iterations"%(niter)
         return conv, e, c
     elif method == 'arnoldi':
         # Currently not used:
@@ -50,7 +54,6 @@ def eigs(matvec, size, nroots, Adiag=None, guess=False, verbose=logger.INFO):
         return david.solve_iter()
 
 
-#@profile
 def davidson(mult_by_A, N, neig, Adiag=None, verbose=logger.INFO):
     """Diagonalize a matrix via non-symmetric Davidson algorithm.
 
@@ -128,11 +131,13 @@ def davidson(mult_by_A, N, neig, Adiag=None, verbose=logger.INFO):
                 break
             else:
                 target += 1
-        for i in range(N):
-            eps = 0.
-            if np.allclose(lamda_k,Adiag[i]):
-                eps = 1e-8
-            xi[i] = q[i]/(lamda_k-Adiag[i]+eps)
+        #for i in range(N):
+            #eps = 0.
+            #if np.allclose(lamda_k,Adiag[i]):
+            #    eps = 1e-10
+            #xi[i] = q[i]/(lamda_k-Adiag[i]+eps)
+        eps = 1e-10
+        xi = q/(lamda_k-Adiag+eps)
 
         # orthonormalize xi wrt b
         bxi,R = np.linalg.qr(np.column_stack((b,xi)))
@@ -145,7 +150,7 @@ def davidson(mult_by_A, N, neig, Adiag=None, verbose=logger.INFO):
 
     # Express alpha in original basis
     evecs = np.dot(b,alpha) # b is N x M, alpha is M x M
-    return conv, lamda[:neig], evecs[:,:neig], istep 
+    return conv, lamda[:neig], evecs[:,:neig], istep
 
 
 def davidson_guess(mult_by_A,N,neig,Adiag=None):
@@ -202,7 +207,7 @@ def davidson_guess(mult_by_A,N,neig,Adiag=None):
                 if overlap_guess_j > overlap_guess_j_max:
                     overlap_guess_j_max = overlap_guess_j
                     target = j
-            
+
             lamda_k = lamda[target]
             alpha_k = alpha[:,target]
 
@@ -239,8 +244,8 @@ def davidson_guess(mult_by_A,N,neig,Adiag=None):
 def diagonalize_asymm(H):
     """
     Diagonalize a real, *asymmetric* matrix and return sorted results.
-    
-    Return the eigenvalues and eigenvectors (column matrix) 
+
+    Return the eigenvalues and eigenvectors (column matrix)
     sorted from lowest to highest eigenvalue.
     """
     E,C = np.linalg.eig(H)

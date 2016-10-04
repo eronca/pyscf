@@ -152,18 +152,21 @@ class DMRGCI(pyscf.lib.StreamObject):
     def generate_schedule(self):
 
         if self.startM is None:
-            self.startM = 200
+            if self.maxM < 200:
+                self.startM = 50
+            else:
+                self.startM = 200
         if len(self.scheduleSweeps) == 0:
             startM = self.startM
             N_sweep = 0
             if self.restart or self._restart :
                 Tol = self.tol / 10.0
             else:
-                Tol = 1.0e-4
+                Tol = 1.0e-5
             Noise = Tol
             while startM < self.maxM:
                 self.scheduleSweeps.append(N_sweep)
-                N_sweep += 2
+                N_sweep += 4
                 self.scheduleMaxMs.append(startM)
                 startM *= 2
                 self.scheduleTols.append(Tol)
@@ -174,14 +177,14 @@ class DMRGCI(pyscf.lib.StreamObject):
                 self.scheduleMaxMs.append(self.maxM)
                 self.scheduleTols.append(Tol)
                 Tol /= 10.0
-                self.scheduleNoises.append(0.0)
+                self.scheduleNoises.append(5.0e-5)
             self.scheduleSweeps.append(N_sweep)
             N_sweep += 2
             self.scheduleMaxMs.append(self.maxM)
             self.scheduleTols.append(self.tol)
             self.scheduleNoises.append(0.0)
             self.twodot_to_onedot = N_sweep + 2
-            self.maxIter = self.twodot_to_onedot + 20
+            self.maxIter = self.twodot_to_onedot + 12
         return self
 
 
@@ -298,7 +301,16 @@ class DMRGCI(pyscf.lib.StreamObject):
         twopdm /= (nelectrons-2)
         onepdm = numpy.einsum('ijjk->ik', twopdm)
         onepdm /= (nelectrons-1)
+        return onepdm, twopdm, threepdm
 
+    def _make_dm123(self, state, norb, nelec, link_index=None, **kwargs):
+        r'''Note this function does NOT compute the standard density matrix.
+        The density matrices are reordered to match the the fci.rdm.make_dm123
+        function (used by NEVPT code).
+        The returned "2pdm" is :math:`\langle p^\dagger q r^\dagger s\rangle`;
+        The returned "3pdm" is :math:`\langle p^\dagger q r^\dagger s t^\dagger u\rangle`.
+        '''
+        onepdm, twopdm, threepdm = self.make_rdm123(state, norb, nelec, None, **kwargs)
         threepdm = numpy.einsum('mkijln->ijklmn',threepdm).copy()
         threepdm += numpy.einsum('jk,lm,in->ijklmn',numpy.identity(norb),numpy.identity(norb),onepdm)
         threepdm += numpy.einsum('jk,miln->ijklmn',numpy.identity(norb),twopdm)

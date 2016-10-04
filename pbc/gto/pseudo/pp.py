@@ -1,3 +1,8 @@
+#!/usr/bin/env python
+#
+# Author: Timothy Berkelbach <tim.berkelbach@gmail.com>
+#
+
 '''PP with numeric integration.  See also pyscf/pbc/gto/pesudo/pp_int.py
 
 For GTH/HGH PPs, see:
@@ -225,7 +230,8 @@ def get_pp(cell, kpt=np.zeros(3)):
     vpploc = np.dot(aoR.T.conj(), vpplocR.reshape(-1,1)*aoR)
 
     # vppnonloc evaluated in reciprocal space
-    aokG = tools.map_fftk(aoR, cell.gs, np.exp(-1j*np.dot(coords, kpt)))
+    aokG = tools.fftk(np.asarray(aoR.T, order='C'),
+                      cell.gs, np.exp(-1j*np.dot(coords, kpt))).T
     ngs = len(aokG)
 
     fakemol = pyscf.gto.Mole()

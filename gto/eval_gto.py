@@ -5,7 +5,6 @@
 
 import numpy
 import ctypes
-import _ctypes
 import pyscf.lib
 
 BLKSIZE = 96 # needs to be the same to lib/gto/grid_ao_drv.c
@@ -21,8 +20,6 @@ try:
     libcgto = pyscf.lib.load_library('libdft')
 except ImportError:
     libcgto = pyscf.lib.load_library('libcgto')
-def _fpointer(name):
-    return ctypes.c_void_p(_ctypes.dlsym(libcgto._handle, name))
 
 def eval_gto(eval_name, atm, bas, env, coords,
              comp=1, shls_slice=None, non0tab=None, out=None):
@@ -81,7 +78,7 @@ def eval_gto(eval_name, atm, bas, env, coords,
     atm = numpy.asarray(atm, dtype=numpy.int32, order='C')
     bas = numpy.asarray(bas, dtype=numpy.int32, order='C')
     env = numpy.asarray(env, dtype=numpy.double, order='C')
-    coords = numpy.asarray(coords, order='C')
+    coords = numpy.asarray(coords, dtype=numpy.double, order='C')
     natm = atm.shape[0]
     nbas = bas.shape[0]
     ngrids = coords.shape[0]

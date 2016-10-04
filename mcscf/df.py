@@ -81,9 +81,9 @@ def density_fit(casscf, auxbasis=None, with_df=None):
                 nao, nmo = mo.shape
                 naoaux = self.with_df.get_naoaux()
                 buf = numpy.empty((naoaux,nmo*(nmo+1)//2))
-                fmmm = _ao2mo._fpointer('AO2MOmmm_nr_s2_s2')
+                fmmm = _ao2mo.libao2mo.AO2MOmmm_nr_s2_s2
                 fdrv = _ao2mo.libao2mo.AO2MOnr_e2_drv
-                ftrans = _ao2mo._fpointer('AO2MOtranse2_nr_s2')
+                ftrans = _ao2mo.libao2mo.AO2MOtranse2_nr_s2
                 b0 = 0
                 for eri1 in self.with_df.loop():
                     naux = eri1.shape[0]
@@ -108,7 +108,7 @@ def density_fit(casscf, auxbasis=None, with_df=None):
                 if dm is None:
                     mocore = self.mo_coeff[:,:self.ncore]
                     dm = numpy.dot(mocore, mocore.T) * 2
-                vj, vk = self.with_df.get_jk(mol, dm, hermi=hermi)
+                vj, vk = self.with_df.get_jk(dm, hermi=hermi)
                 return vj-vk*.5
             else:
                 return casscf_class.get_jk(self, mol, dm, hermi)
@@ -117,7 +117,7 @@ def density_fit(casscf, auxbasis=None, with_df=None):
 # We only need approximate jk for self.update_jk_in_ah
         def get_jk(self, mol, dm, hermi=1):
             if self.with_df:
-                return self.with_df.get_jk(mol, dm, hermi=hermi)
+                return self.with_df.get_jk(dm, hermi=hermi)
             else:
                 return casscf_class.get_jk(self, mol, dm, hermi)
 
@@ -213,9 +213,9 @@ def approx_hessian(casscf, auxbasis=None, with_df=None):
             ncore = self.ncore
             eris.j_pc = numpy.zeros((nmo,ncore))
             k_cp = numpy.zeros((ncore,nmo))
-            fmmm = _ao2mo._fpointer('AO2MOmmm_nr_s2_iltj')
+            fmmm = _ao2mo.libao2mo.AO2MOmmm_nr_s2_iltj
             fdrv = _ao2mo.libao2mo.AO2MOnr_e2_drv
-            ftrans = _ao2mo._fpointer('AO2MOtranse2_nr_s2')
+            ftrans = _ao2mo.libao2mo.AO2MOtranse2_nr_s2
             bufs1 = numpy.empty((self.with_df.blockdim,nmo,nmo))
             for eri1 in self.with_df.loop():
                 naux = eri1.shape[0]
@@ -237,7 +237,7 @@ def approx_hessian(casscf, auxbasis=None, with_df=None):
             return eris
 
         def get_jk(self, mol, dm, hermi=1):
-            return self.with_df.get_jk(mol, dm, hermi=hermi)
+            return self.with_df.get_jk(dm, hermi=hermi)
 
     return CASSCF()
 
@@ -275,9 +275,9 @@ class _ERIS(object):
         fxpp = h5py.File(_tmpfile1.name)
         bufpa = numpy.empty((naoaux,nmo,ncas))
         bufs1 = numpy.empty((with_df.blockdim,nmo,nmo))
-        fmmm = _ao2mo._fpointer('AO2MOmmm_nr_s2_iltj')
+        fmmm = _ao2mo.libao2mo.AO2MOmmm_nr_s2_iltj
         fdrv = _ao2mo.libao2mo.AO2MOnr_e2_drv
-        ftrans = _ao2mo._fpointer('AO2MOtranse2_nr_s2')
+        ftrans = _ao2mo.libao2mo.AO2MOtranse2_nr_s2
         fxpp_keys = []
         b0 = 0
         for k, eri1 in enumerate(with_df.loop()):

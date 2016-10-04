@@ -9,7 +9,6 @@
 #         dm[p,q] = < q^+ p >
 
 import ctypes
-import _ctypes
 import numpy
 import pyscf.lib
 from pyscf.fci import cistring
@@ -123,8 +122,7 @@ def make_rdm12_spin1(fname, cibra, ciket, norb, nelec, link_index=None, symm=0):
     nb,nlinkb = link_indexb.shape[:2]
     rdm1 = numpy.empty((norb,norb))
     rdm2 = numpy.empty((norb,norb,norb,norb))
-    fn = _ctypes.dlsym(librdm._handle, fname)
-    librdm.FCIrdm12_drv(ctypes.c_void_p(fn),
+    librdm.FCIrdm12_drv(getattr(librdm, fname),
                         rdm1.ctypes.data_as(ctypes.c_void_p),
                         rdm2.ctypes.data_as(ctypes.c_void_p),
                         cibra.ctypes.data_as(ctypes.c_void_p),
@@ -148,9 +146,13 @@ def make_dm123(fname, cibra, ciket, norb, nelec):
     r'''Spin traced 1, 2 and 3-particle density matrices.
 
     .. note::
-        The 2pdm is :math:`\langle p^\dagger q^\dagger r s\rangle` but is
+        In this function, 2pdm is :math:`\langle p^\dagger q r^\dagger s\rangle`;
+        3pdm is :math:`\langle p^\dagger q r^\dagger s t^\dagger u\rangle`.
+        After calling reorder_dm123, the 2pdm and 3pdm are transformed to
+        standard definition:
+        2pdm = :math:`\langle p^\dagger q^\dagger r s\rangle` but is
         stored as [p,s,q,r];
-        The 3pdm is :math:`\langle p^\dagger q^\dagger r^\dagger s t u\rangle`,
+        3pdm = :math:`\langle p^\dagger q^\dagger r^\dagger s t u\rangle`,
         stored as [p,u,q,t,r,s].
     '''
     cibra = numpy.asarray(cibra, order='C')
@@ -166,8 +168,7 @@ def make_dm123(fname, cibra, ciket, norb, nelec):
     rdm1 = numpy.empty((norb,)*2)
     rdm2 = numpy.empty((norb,)*4)
     rdm3 = numpy.empty((norb,)*6)
-    kernel = _ctypes.dlsym(librdm._handle, fname)
-    librdm.FCIrdm3_drv(ctypes.c_void_p(kernel),
+    librdm.FCIrdm3_drv(getattr(librdm, fname),
                        rdm1.ctypes.data_as(ctypes.c_void_p),
                        rdm2.ctypes.data_as(ctypes.c_void_p),
                        rdm3.ctypes.data_as(ctypes.c_void_p),
@@ -213,11 +214,16 @@ def make_dm1234(fname, cibra, ciket, norb, nelec):
     r'''Spin traced 1, 2, 3 and 4-particle density matrices.
 
     .. note::
-        The 2pdm is :math:`\langle p^\dagger q^\dagger s r\rangle` but is
+        In this function, 2pdm is :math:`\langle p^\dagger q r^\dagger s\rangle`;
+        3pdm is :math:`\langle p^\dagger q r^\dagger s t^\dagger u\rangle`;
+        4pdm is :math:`\langle p^\dagger q r^\dagger s t^\dagger u v^\dagger w\rangle`.
+        After calling reorder_dm1234, the 2pdm and 3pdm and 4pdm are transformed to
+        standard definition:
+        2pdm = :math:`\langle p^\dagger q^\dagger s r\rangle` but is
         stored as [p,r,q,s];
-        The 3pdm is :math:`\langle p^\dagger q^\dagger r^\dagger u t s\rangle`,
+        3pdm = :math:`\langle p^\dagger q^\dagger r^\dagger u t s\rangle`,
         stored as [p,s,q,t,r,u];
-        The 4pdm is :math:`\langle p^\dagger q^\dagger r^\dagger s^dagger w v u t\rangle`,
+        4pdm = :math:`\langle p^\dagger q^\dagger r^\dagger s^dagger w v u t\rangle`,
         stored as [p,w,q,v,r,u,s,t].
     '''
     cibra = numpy.asarray(cibra, order='C')
@@ -234,7 +240,7 @@ def make_dm1234(fname, cibra, ciket, norb, nelec):
     rdm2 = numpy.empty((norb,)*4)
     rdm3 = numpy.empty((norb,)*6)
     rdm4 = numpy.empty((norb,)*8)
-    librdm.FCIrdm4_drv(ctypes.c_void_p(_ctypes.dlsym(librdm._handle, fname)),
+    librdm.FCIrdm4_drv(getattr(librdm, fname),
                        rdm1.ctypes.data_as(ctypes.c_void_p),
                        rdm2.ctypes.data_as(ctypes.c_void_p),
                        rdm3.ctypes.data_as(ctypes.c_void_p),

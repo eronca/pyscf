@@ -261,7 +261,7 @@ def intor_cross(intor, cell1, cell2, comp=1, hermi=0, kpts=None, kpt=None):
         assert('2e' not in intor)
         fill = getattr(libpbc, 'PBCnr2c_fill_'+aosym)
 
-    fintor = moleintor._fpointer(intor)
+    fintor = getattr(moleintor.libcgto, intor)
     intopt = lib.c_null_ptr()
 
     nimgs = np.max((cell1.nimgs, cell2.nimgs), axis=0)
@@ -531,7 +531,7 @@ def make_kpts(cell, nks):
     >>> cell.make_kpts((4,4,4))
     '''
     ks_each_axis = [(np.arange(n)+.5)/n-.5 for n in nks]
-    scaled_kpts = lib.cartesian_prod(*ks_each_axis)
+    scaled_kpts = lib.cartesian_prod(ks_each_axis)
     kpts = cell.get_abs_kpts(scaled_kpts)
     return kpts
 

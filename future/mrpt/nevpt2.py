@@ -5,7 +5,6 @@
 #
 
 import ctypes
-import _ctypes
 import time
 import tempfile
 from functools import reduce
@@ -14,10 +13,8 @@ import h5py
 import pyscf.lib
 from pyscf.lib import logger
 from pyscf import fci
-from pyscf import mcscf
+from pyscf.mcscf import mc_ao2mo
 from pyscf import ao2mo
-from pyscf import scf
-from pyscf.mcscf import casci
 from pyscf.ao2mo import _ao2mo
 
 libmc = pyscf.lib.load_library('libmcscf')
@@ -663,7 +660,7 @@ class NEVPT(pyscf.lib.StreamObject):
 
         if hasattr(self.fcisolver, 'nevpt_intermediate'):
             logger.info(self, 'DMRG-NEVPT')
-            dm1, dm2, dm3 = self.fcisolver.make_rdm123(self.load_ci(),self.ncas,self.nelecas,None)
+            dm1, dm2, dm3 = self.fcisolver._make_dm123(self.load_ci(),self.ncas,self.nelecas,None)
         else:
             dm1, dm2, dm3 = fci.rdm.make_dm123('FCI3pdm_kern_sf',
                                                self.load_ci(), self.load_ci(), self.ncas, self.nelecas)
@@ -777,7 +774,7 @@ def _contract4pdm(kern, eri, civec, norb, nelec, link_index=None):
     fdm3 = numpy.empty((norb,norb,norb,norb,norb,norb))
     eri = numpy.ascontiguousarray(eri)
 
-    libmc.NEVPTcontract(ctypes.c_void_p(_ctypes.dlsym(libmc._handle, kern)),
+    libmc.NEVPTcontract(getattr(libmc, kern),
                         fdm2.ctypes.data_as(ctypes.c_void_p),
                         fdm3.ctypes.data_as(ctypes.c_void_p),
                         eri.ctypes.data_as(ctypes.c_void_p),
@@ -815,15 +812,17 @@ def _ERIS(mc, mo, method='incore'):
     ncore = mc.ncore
     ncas = mc.ncas
 
-    if ((method == 'outcore') or
-        (mcscf.mc_ao2mo._mem_usage(ncore, ncas, nmo)[0] +
-         nmo**4*2/1e6 > mc.max_memory*.9) or
-        (mc._scf._eri is None)):
-        ppaa, papa, pacv, cvcv = \
-                trans_e1_outcore(mc, mo, max_memory=mc.max_memory,
-                                 verbose=mc.verbose)
-    else:
+    mem_incore, mem_outcore, mem_basic = mc_ao2mo._mem_usage(ncore, ncas, nmo)
+    mem_now = pyscf.lib.current_memory()[0]
+    if (method == 'incore' and mc._scf._eri is not None and
+        (mem_incore+mem_now < mc.max_memory*.9) or
+        mc.mol.incore_anyway):
         ppaa, papa, pacv, cvcv = trans_e1_incore(mc, mo)
+    else:
+        max_memory = max(2000, mc.max_memory-mem_now)
+        ppaa, papa, pacv, cvcv = \
+                trans_e1_outcore(mc, mo, max_memory=max_memory,
+                                 verbose=mc.verbose)
 
     dmcore = numpy.dot(mo[:,:ncore], mo[:,:ncore].T)
     vj, vk = mc._scf.get_jk(mc.mol, dmcore)
@@ -949,6 +948,8 @@ def _trans(mo, ncore, ncas, fload, cvcv=None, ao_loc=None):
 
 if __name__ == '__main__':
     from pyscf import gto
+    from pyscf import scf
+    from pyscf import mcscf
 
     mol = gto.Mole()
     mol.verbose = 0

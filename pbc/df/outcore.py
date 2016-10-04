@@ -6,12 +6,11 @@
 import ctypes
 import numpy
 import h5py
-import pyscf.gto
-import pyscf.ao2mo
 from pyscf import lib
 from pyscf.lib import logger
-from pyscf.scf import _vhf
 from pyscf.pbc.df import incore
+from pyscf.gto import PTR_COORD
+from pyscf.ao2mo.outcore import balance_segs
 
 def aux_e2(cell, auxcell, erifile, intor='cint3c2e_sph', aosym='s1', comp=1,
            kptij_lst=None, dataname='eri_mo', max_memory=2000, verbose=0):
@@ -39,24 +38,10 @@ def aux_e2(cell, auxcell, erifile, intor='cint3c2e_sph', aosym='s1', comp=1,
     feri[dataname+'-kptij'] = kptij_lst
     nkptij = len(kptij_lst)
 
-    if nkptij == 1:
-        if numpy.linalg.norm(kptij_lst[0,0]-kptij_lst[0,1]) < 1e-9:
-            aosym = 's2ij'
-        else:
-            aosym = 's1'
-        mat = incore.aux_e2(cell, auxcell, intor, aosym, comp, kptij_lst[0])
-        if comp == 1:
-            feri[dataname+'/0'] = mat.T
-        else:
-            # (kpt,comp,i,j,L) -> (kpt,comp,L,i,j)
-            feri[dataname+'/0'] = mat.transpose(0,2,1)
-        feri.close()
-        return erifile
-
     # sum over largest number of images in either cell or auxcell
     nimgs = numpy.max((cell.nimgs, auxcell.nimgs), axis=0)
     Ls = cell.get_lattice_Ls(nimgs)
-    logger.debug1(cell, "Images %s", nimgs)
+    logger.debug1(cell, "pbc.df.outcore.Images %s", nimgs)
     logger.debug3(cell, "Ls = %s", Ls)
 
     nao = cell.nao_nr()
@@ -75,16 +60,18 @@ def aux_e2(cell, auxcell, erifile, intor='cint3c2e_sph', aosym='s1', comp=1,
         else:
             nao_pair = nao * nao
         if comp == 1:
-            feri.create_dataset(key, (naux,nao_pair), dtype)
+            shape = (naux,nao_pair)
         else:
-            feri.create_dataset(key, (comp,naux,nao_pair), dtype)
+            shape = (comp,naux,nao_pair)
+        chunks = (min(256,naux), min(256,nao_pair))  # 512 KB
+        feri.create_dataset(key, shape, dtype, chunks=chunks)
     if naux == 0:
         feri.close()
         return erifile
 
     aux_loc = auxcell.ao_loc_nr('ssc' in intor)
     buflen = max(8, int(max_memory*1e6/16/(nkptij*nao**2*comp)))
-    auxranges = pyscf.ao2mo.outcore.balance_segs(aux_loc[1:]-aux_loc[:-1], buflen)
+    auxranges = balance_segs(aux_loc[1:]-aux_loc[:-1], buflen)
     buflen = max([x[2] for x in auxranges])
     buf = [numpy.zeros(nao*nao*buflen*comp, dtype=numpy.complex128)
            for k in range(nkptij)]
@@ -92,7 +79,7 @@ def aux_e2(cell, auxcell, erifile, intor='cint3c2e_sph', aosym='s1', comp=1,
     atm, bas, env = ints._envs[:3]
 
     xyz = numpy.asarray(cell.atom_coords(), order='C')
-    ptr_coordL = atm[:cell.natm,pyscf.gto.PTR_COORD]
+    ptr_coordL = atm[:cell.natm,PTR_COORD]
     ptr_coordL = numpy.vstack((ptr_coordL,ptr_coordL+1,ptr_coordL+2)).T.copy('C')
     kpti = kptij_lst[:,0]
     kptj = kptij_lst[:,1]
@@ -114,7 +101,7 @@ def aux_e2(cell, auxcell, erifile, intor='cint3c2e_sph', aosym='s1', comp=1,
         if numpy.all(aosym_s2):
             for l, L1 in enumerate(Ls):
                 env[ptr_coordL] = xyz + L1
-                e = numpy.dot(Ls[:l+1]-L1, kptj.T)
+                e = numpy.dot(Ls[:l+1]-L1, kptj.T)  # Lattice sum over half of the images {1..l}
                 exp_Lk = numpy.exp(1j * numpy.asarray(e, order='C'))
                 exp_Lk[l] = .5
                 ints(exp_Lk, c_shls_slice)

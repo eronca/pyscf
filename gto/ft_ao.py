@@ -8,7 +8,6 @@ Analytic Fourier transformation for AO and AO-pair value
 '''
 
 import ctypes
-import _ctypes
 import numpy
 import scipy.linalg
 from pyscf import lib
@@ -20,8 +19,8 @@ from pyscf.gto.moleintor import libcgto
 #
 # Note for nonuniform_orth grids, invh is reloaded as the base grids for x,y,z axes
 #
-def ft_aopair(mol, Gv, shls_slice=None, hermi=False,
-              invh=None, gxyz=None, gs=None, verbose=None):
+def ft_aopair(mol, Gv, shls_slice=None, aosym='s1',
+              invh=None, gxyz=None, gs=None, buf=None, verbose=None):
     ''' FT transform AO pair
     \int i(r) j(r) exp(-ikr) dr^3
     '''
@@ -52,29 +51,35 @@ def ft_aopair(mol, Gv, shls_slice=None, hermi=False,
             eval_gz = 'GTO_Gv_nonuniform_orth'
 
     fn = libcgto.GTO_ft_ovlp_mat
-    intor = ctypes.c_void_p(_ctypes.dlsym(libcgto._handle, 'GTO_ft_ovlp_sph'))
-    eval_gz = ctypes.c_void_p(_ctypes.dlsym(libcgto._handle, eval_gz))
+    intor = getattr(libcgto, 'GTO_ft_ovlp_sph')
+    eval_gz = getattr(libcgto, eval_gz)
 
     ao_loc = numpy.asarray(mol.ao_loc_nr(), dtype=numpy.int32)
     ni = ao_loc[shls_slice[1]] - ao_loc[shls_slice[0]]
     nj = ao_loc[shls_slice[3]] - ao_loc[shls_slice[2]]
-    mat = numpy.empty((nGv,ni,nj), order='F', dtype=numpy.complex128)
+    if aosym == 's1':
+        if shls_slice[:2] == shls_slice[2:4]:
+            fill = getattr(libcgto, 'GTO_ft_fill_s1hermi')
+        else:
+            fill = getattr(libcgto, 'GTO_ft_fill_s1')
+        shape = (nGv,ni,nj)
+    else:
+        fill = getattr(libcgto, 'GTO_ft_fill_s2')
+        i0 = ao_loc[shls_slice[0]]
+        i1 = ao_loc[shls_slice[1]]
+        nij = i1*(i1+1)//2 - i0*(i0+1)//2
+        shape = (nGv,nij)
+    mat = numpy.ndarray(shape, order='F', dtype=numpy.complex128, buffer=buf)
 
-    fn(intor, eval_gz, mat.ctypes.data_as(ctypes.c_void_p),
+    fn(intor, eval_gz, fill, mat.ctypes.data_as(ctypes.c_void_p),
        (ctypes.c_int*4)(*shls_slice),
-       ao_loc.ctypes.data_as(ctypes.c_void_p),
-       ctypes.c_int(hermi), ctypes.c_double(0),
+       ao_loc.ctypes.data_as(ctypes.c_void_p), ctypes.c_double(0),
        GvT.ctypes.data_as(ctypes.c_void_p),
        p_invh, p_gxyzT, p_gs, ctypes.c_int(nGv),
-       mol._atm.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.natm*2),
-       mol._bas.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.nbas*2),
+       mol._atm.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.natm),
+       mol._bas.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.nbas),
        mol._env.ctypes.data_as(ctypes.c_void_p))
 
-    if hermi:
-        assert(ni == nj)
-        for i in range(ni):
-            for j in range(i):
-                mat[:,j,i] = mat[:,i,j]
     return mat
 
 
@@ -109,13 +114,14 @@ def ft_ao(mol, Gv, shls_slice=None,
             eval_gz = 'GTO_Gv_nonuniform_orth'
 
     fn = libcgto.GTO_ft_ovlp_mat
-    intor = ctypes.c_void_p(_ctypes.dlsym(libcgto._handle, 'GTO_ft_ovlp_sph'))
-    eval_gz = ctypes.c_void_p(_ctypes.dlsym(libcgto._handle, eval_gz))
+    intor = getattr(libcgto, 'GTO_ft_ovlp_sph')
+    eval_gz = getattr(libcgto, eval_gz)
+    fill = getattr(libcgto, 'GTO_ft_fill_s1')
 
     ghost_atm = numpy.array([[0,0,0,0,0,0]], dtype=numpy.int32)
     ghost_bas = numpy.array([[0,0,1,1,0,0,3,0]], dtype=numpy.int32)
     ghost_env = numpy.zeros(4)
-    ghost_env[3] = numpy.sqrt(4*numpy.pi)  # s function spheric norm for bas_ctr_coeff
+    ghost_env[3] = numpy.sqrt(4*numpy.pi)  # s function spheric norm
     atm, bas, env = gto.conc_env(mol._atm, mol._bas, mol._env,
                                  ghost_atm, ghost_bas, ghost_env)
     ao_loc = mol.ao_loc_nr()
@@ -125,10 +131,10 @@ def ft_ao(mol, Gv, shls_slice=None,
     mat = numpy.zeros((nGv,ni), order='F', dtype=numpy.complex)
 
     shls_slice = shls_slice + (mol.nbas, mol.nbas+1)
-    fn(intor, eval_gz, mat.ctypes.data_as(ctypes.c_void_p),
+    fn(intor, eval_gz, fill, mat.ctypes.data_as(ctypes.c_void_p),
        (ctypes.c_int*4)(*shls_slice),
        ao_loc.ctypes.data_as(ctypes.c_void_p),
-       ctypes.c_int(0), ctypes.c_double(0),
+       ctypes.c_double(0),
        GvT.ctypes.data_as(ctypes.c_void_p),
        p_invh, p_gxyzT, p_gs, ctypes.c_int(nGv),
        atm.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(len(atm)),
@@ -163,7 +169,7 @@ if __name__ == '__main__':
 
     import time
     print time.clock()
-    print(numpy.linalg.norm(ft_aopair(mol, Gv, None, True, invh, gxyz, gs)) - 63.0239113778)
+    print(numpy.linalg.norm(ft_aopair(mol, Gv, None, 's1', invh, gxyz, gs)) - 63.0239113778)
     print time.clock()
     print(numpy.linalg.norm(ft_ao(mol, Gv, None, invh, gxyz, gs))-56.8273147065)
     print time.clock()

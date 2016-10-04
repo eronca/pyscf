@@ -3,7 +3,6 @@
 
 import time
 import ctypes
-import _ctypes
 from functools import reduce
 import copy
 import numpy
@@ -244,8 +243,7 @@ class UHF(hf.SCF):
     def init_direct_scf(self, mol=None):
         if mol is None: mol = self.mol
         def set_vkscreen(opt, name):
-            opt._this.contents.r_vkscreen = \
-                ctypes.c_void_p(_ctypes.dlsym(_vhf.libcvhf._handle, name))
+            opt._this.contents.r_vkscreen = _vhf._fpointer(name)
         opt = _vhf.VHFOpt(mol, 'cint2e', 'CVHFrkbllll_prescreen',
                           'CVHFrkbllll_direct_scf',
                           'CVHFrkbllll_direct_scf_dm')
@@ -312,8 +310,7 @@ def _uncontract_mol(mol, xuncontract=False, exp_drop=0.2):
             nkept = (pmol._env[pexp:pexp+np] > exp_drop).sum()
             if nkept > nc:
                 b_coeff = mol.bas_ctr_coeff(ib)
-                norms = mole.gto_norm(l, mol._env[pexp:pexp+np])
-                importance = numpy.einsum('i,ij->i', 1/norms, abs(b_coeff))
+                importance = numpy.einsum('ij->i', abs(b_coeff))
                 idx = numpy.argsort(importance[:nkept])
                 contracted = numpy.sort(idx[nkept-nc:])
                 primitive  = numpy.sort(idx[:nkept-nc])
@@ -322,18 +319,17 @@ def _uncontract_mol(mol, xuncontract=False, exp_drop=0.2):
                 bs = numpy.empty((nkept-nc,mol._bas.shape[1]), dtype=numpy.int32)
                 bs[:] = mol._bas[ib]
                 bs[:,mole.NCTR_OF] = bs[:,mole.NPRIM_OF] = 1
-                norms = numpy.empty(nkept-nc)
                 for k, i in enumerate(primitive):
-                    norms[k] = mole.gto_norm(l, mol._env[pexp+i])
+                    norm = mole.gto_norm(l, mol._env[pexp+i])
                     _env.append(mol._env[pexp+i])
-                    _env.append(norms[k])
+                    _env.append(norm)
                     bs[k,mole.PTR_EXP] = ptr
                     bs[k,mole.PTR_COEFF] = ptr + 1
                     ptr += 2
                 _bas.append(bs)
                 d = l * 2 + 1
                 part1 = numpy.zeros((d*(nkept-nc),d*nc))
-                c = numpy.einsum('i,ij->ij', 1/norms, b_coeff[primitive])
+                c = b_coeff[primitive]
                 for i in range(d):
                     part1[i::d,i::d] = c
 
@@ -342,7 +338,7 @@ def _uncontract_mol(mol, xuncontract=False, exp_drop=0.2):
                 bs[mole.NPRIM_OF] = np - nkept + nc
                 idx = numpy.hstack((contracted, numpy.arange(nkept,np)))
                 exps = mol._env[pexp:pexp+np][idx]
-                cs = b_coeff[idx]
+                cs = mol._libcint_ctr_coeff(ib)[idx]
                 ee = mole._gaussian_int(l*2+2, exps[:,None] + exps)
                 s1 = numpy.einsum('pi,pq,qi->i', cs, ee, cs)
                 s1 = numpy.sqrt(s1)

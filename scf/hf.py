@@ -681,12 +681,12 @@ def get_grad(mo_coeff, mo_occ, fock_ao):
     occidx = mo_occ > 0
     viridx = ~occidx
 
-    fock = reduce(numpy.dot, (mo_coeff.T.conj(), fock_ao, mo_coeff))
-    g = fock[viridx.reshape(-1,1) & occidx] * 2
+    g = reduce(numpy.dot, (mo_coeff[:,viridx].T.conj(), fock_ao,
+                           mo_coeff[:,occidx])) * 2
     return g.reshape(-1)
 
 
-def analyze(mf, verbose=logger.DEBUG):
+def analyze(mf, verbose=logger.DEBUG, **kwargs):
     '''Analyze the given SCF object:  print orbital energies, occupancies;
     print orbital coefficients; Mulliken population analysis; Diople moment.
     '''
@@ -709,7 +709,7 @@ def analyze(mf, verbose=logger.DEBUG):
         label = mf.mol.spheric_labels(True)
         orth_coeff = orth.orth_ao(mf.mol, 'meta_lowdin', s=ovlp_ao)
         c = reduce(numpy.dot, (orth_coeff.T, ovlp_ao, mo_coeff))
-        dump_mat.dump_rec(mf.stdout, c, label, start=1)
+        dump_mat.dump_rec(mf.stdout, c, label, start=1, **kwargs)
     dm = mf.make_rdm1(mo_coeff, mo_occ)
     return (mf.mulliken_meta(mf.mol, dm, s=ovlp_ao, verbose=log),
             mf.dip_moment(mf.mol, dm, verbose=log))
@@ -1106,9 +1106,14 @@ class SCF(lib.StreamObject):
         return self
 
     def get_init_guess(self, mol=None, key='minao'):
+        if mol is None:
+            mol = self.mol
         if callable(key):
             dm = key(mol)
         elif key.lower() == '1e':
+            dm = self.init_guess_by_1e(mol)
+        elif getattr(mol, 'natm', 0) == 0:
+            logger.info(self, 'No atom found in mol. Use 1e initial guess')
             dm = self.init_guess_by_1e(mol)
         elif key.lower() == 'atom':
             dm = self.init_guess_by_atom(mol)
@@ -1227,9 +1232,9 @@ class SCF(lib.StreamObject):
             return vj - vk * .5
 
     @lib.with_doc(analyze.__doc__)
-    def analyze(self, verbose=None):
+    def analyze(self, verbose=None, **kwargs):
         if verbose is None: verbose = self.verbose
-        return analyze(self, verbose)
+        return analyze(self, verbose, **kwargs)
 
     @lib.with_doc(mulliken_pop.__doc__)
     def mulliken_pop(self, mol=None, dm=None, s=None, verbose=logger.DEBUG):
@@ -1288,7 +1293,7 @@ class SCF(lib.StreamObject):
     def hf_energy(self, x):
         sys.stderr.write('WARN: Attribute .hf_energy will be removed in PySCF v1.1. '
                          'It is replaced by attribute .e_tot\n')
-        self.level_shift = x
+        self.hf_energy = x
 
     @property
     def level_shift_factor(self):
