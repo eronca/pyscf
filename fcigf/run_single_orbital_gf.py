@@ -47,7 +47,7 @@ def run_gf_casscf(mc, mf, mol, emc, omega, omega_real, delta, npoints, maxiter, 
     
     v2e = pyscf.ao2mo.incore.full(mf._eri, mo) # v2e has 4-fold symmetry now
     v2e = pyscf.ao2mo.restore(1, v2e, nmo) # to remove 4-fold symmetry, turn v2e to n**4 array
-    
+
     # Compute core Hamiltonian with frozen-core two-electron component
     h1eff = h1e_mo + 2 * np.einsum('pqrr->pq', v2e[:,:,:ncore,:ncore]) - np.einsum('prqr->pq', v2e[:,:ncore,:,:ncore])
     

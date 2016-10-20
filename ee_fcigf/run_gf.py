@@ -147,7 +147,7 @@ def run_gf_casscf(mc, mf, mol, emc, omega, omega_real, delta, npoints, maxiter, 
     plt.ylabel(r'A($\omega$)')
     plt.plot(omega_array, density_of_states, label='A')
     plt.legend()
-    plt.show()
+    #plt.show()
      
     #test
     #plt.xlabel(r'$\omega$')
