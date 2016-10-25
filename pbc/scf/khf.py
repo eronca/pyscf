@@ -125,7 +125,19 @@ def get_occ(mf, mo_energy_kpts=None, mo_coeff_kpts=None):
     # TODO: implement Fermi smearing and print mo_energy kpt by kpt
     mo_energy = np.sort(mo_energy_kpts.ravel())
     fermi = mo_energy[nocc-1]
-    mo_occ_kpts[mo_energy_kpts <= fermi] = 2
+    if mf.sigma is None:
+        mo_occ_kpts[mo_energy_kpts <= fermi] = 2
+    else:
+        # Optimize mu to give correct electron number
+        def nelec_cost_fn(m):
+            mo_occ_kpts = 2./(np.exp((mo_energy_kpts-m)/mf.sigma)+1.)
+            return ( sum(mo_occ_kpts.ravel())/nkpts - mf.cell.nelectron )**2
+        res = scipy.optimize.minimize(nelec_cost_fn, fermi, method='Powell')
+        mu = res.x
+        mo_occ_kpts = 2./(np.exp((mo_energy_kpts-mu)/mf.sigma)+1.)
+        #print "Sum mo_occ_kpts =", sum(mo_occ_kpts.ravel())/nkpts
+        #print " should equal nelec =", mf.cell.nelectron
+        #print "HOMO =", fermi, "; Optimized mu =", mu
 
     if nocc < mo_energy.size:
         logger.info(mf, 'HOMO = %.12g  LUMO = %.12g',
@@ -259,6 +271,7 @@ class KRHF(hf.RHF):
         self.exxdiv = exxdiv
         self.kpts = kpts
         self.direct_scf = False
+        self.sigma = None
 
         self.exx_built = False
         self._keys = self._keys.union(['cell', 'exx_built', 'exxdiv', 'with_df'])
