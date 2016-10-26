@@ -15,6 +15,7 @@ See Also:
 import time
 import numpy as np
 import h5py
+import scipy.optimize
 from pyscf.pbc.scf import hf as pbchf
 from pyscf import lib
 from pyscf.scf import hf
@@ -274,7 +275,7 @@ class KRHF(hf.RHF):
         self.sigma = None
 
         self.exx_built = False
-        self._keys = self._keys.union(['cell', 'exx_built', 'exxdiv', 'with_df'])
+        self._keys = self._keys.union(['cell', 'exx_built', 'exxdiv', 'with_df','sigma'])
 
     @property
     def kpts(self):
