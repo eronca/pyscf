@@ -6,8 +6,8 @@ import pyscf.mcscf
 import pyscf.ao2mo
 import pyscf.lib.logger as logger
 import math
-from compute_gf import *
-from run_gf import *
+from pyscf.fcigf.compute_gf import *
+from pyscf.fcigf.run_gf import *
 
 def run(r):
     mol = pyscf.gto.Mole()

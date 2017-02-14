@@ -151,7 +151,6 @@ def run_gf_casscf(mc, mf, mol, emc, time, time_real, eta, npoints):
         else:
           density_of_states_rem += gf_imag_rem+gf_imag_rem_b
           real_part_rem += gf_real_rem+gf_real_rem_b
-          print "VEDIAMO ", gf_real_rem+gf_real_rem_b
           density_of_states_add += gf_imag_add+gf_imag_add_b
           real_part_add += gf_real_add+gf_real_add_b
          

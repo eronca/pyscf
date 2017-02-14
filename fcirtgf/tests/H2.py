@@ -34,7 +34,7 @@ def run(r):
     # User input for GF-CASSCF
     time_real = True
     time_range = (0., 3000.)
-    npoints = 10000
+    npoints = 30000
     # Number of iterations for Green's function computation
     maxiter = 1000
     tol_gf = 1e-4
