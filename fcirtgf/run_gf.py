@@ -99,17 +99,30 @@ def run_gf_casscf(mc, mf, mol, emc, time, time_real, eta, npoints):
         Im_phi_t_rem = np.zeros(Re_phi_t_rem.shape)
         Re_phi_t_add = pyscf.fci.addons.cre_a(mc.ci, ncas, nelecas, orb)
         Im_phi_t_add = np.zeros(Re_phi_t_add.shape)
+        Re_phi_t_rem_b = pyscf.fci.addons.des_b(mc.ci, ncas, nelecas, orb)
+        Im_phi_t_rem_b = np.zeros(Re_phi_t_rem_b.shape)
+        Re_phi_t_add_b = pyscf.fci.addons.cre_b(mc.ci, ncas, nelecas, orb)
+        Im_phi_t_add_b = np.zeros(Re_phi_t_add_b.shape)
 
         gf_real_rem = np.zeros((npoints))
         gf_imag_rem = np.zeros((npoints))
         gf_real_add = np.zeros((npoints))
         gf_imag_add = np.zeros((npoints))
+        gf_real_rem_b = np.zeros((npoints))
+        gf_imag_rem_b = np.zeros((npoints))
+        gf_real_add_b = np.zeros((npoints))
+        gf_imag_add_b = np.zeros((npoints))
 
         init_rem_norm = np.linalg.norm(Re_phi_t_rem)
         init_add_norm = np.linalg.norm(Re_phi_t_add)
+        init_rem_norm_b = np.linalg.norm(Re_phi_t_rem_b)
+        init_add_norm_b = np.linalg.norm(Re_phi_t_add_b)
 
-        gf_real_rem[0] = 2.0*np.dot(np.ravel(Re_phi_t_rem), np.ravel(Re_phi_t_rem))
-        gf_real_add[0] = 2.0*np.dot(np.ravel(Re_phi_t_add), np.ravel(Re_phi_t_add))
+        gf_real_rem[0] = np.dot(np.ravel(Re_phi_t_rem), np.ravel(Re_phi_t_rem))
+        gf_real_add[0] = np.dot(np.ravel(Re_phi_t_add), np.ravel(Re_phi_t_add))
+        if (nelecas[0]!=nelecas[1]):
+           gf_real_rem_b[0] = np.dot(np.ravel(Re_phi_t_rem_b), np.ravel(Re_phi_t_rem_b))
+           gf_real_add_b[0] = np.dot(np.ravel(Re_phi_t_add_b), np.ravel(Re_phi_t_add_b))
 
         for j in range(1, npoints, 1): 
             print "Calculating Removal Part"
@@ -117,18 +130,31 @@ def run_gf_casscf(mc, mf, mol, emc, time, time_real, eta, npoints):
             psi_t = Re_psi_t+1j*Im_psi_t
             phi_t_rem = Re_phi_t_rem+1j*Im_phi_t_rem
             phi_t_add = Re_phi_t_add+1j*Im_phi_t_add
+            phi_t_rem_b = Re_phi_t_rem_b+1j*Im_phi_t_rem_b
+            phi_t_add_b = Re_phi_t_add_b+1j*Im_phi_t_add_b
             print "Norm Psi(t) : ", np.linalg.norm(psi_t)
             print "Norm Phi(t) Removal : ", np.linalg.norm(phi_t_rem)
             print "Norm Phi(t) Addition : ", np.linalg.norm(phi_t_add)
             Re_phi_t_rem, Im_phi_t_rem, Re_phi_t_add, Im_phi_t_add, \
             gf_real_rem[j], gf_imag_rem[j], gf_real_add[j], gf_imag_add[j] = gf_calculation(Re_psi_t, Im_psi_t, Re_phi_t_rem, Im_phi_t_rem,
-                                                                                            Re_phi_t_add, Im_phi_t_add, init_rem_norm, init_add_norm, delta_t, e_cas, orb, orb, mc, h1eff, v2e)
-
-
-        density_of_states_rem += gf_imag_rem
-        real_part_rem += gf_real_rem
-        density_of_states_add += gf_imag_add
-        real_part_add += gf_real_add
+                                                                                          Re_phi_t_add, Im_phi_t_add, init_rem_norm, init_add_norm, delta_t, e_cas, orb, orb, mc, h1eff, v2e)
+            if (nelecas[0]!=nelecas[1]):
+               Re_phi_t_rem_b, Im_phi_t_rem_b, Re_phi_t_add_b, Im_phi_t_add_b, \
+               gf_real_rem_b[j], gf_imag_rem_b[j], gf_real_add_b[j], gf_imag_add_b[j] = gf_calculation(Re_psi_t, Im_psi_t, Re_phi_t_rem_b, Im_phi_t_rem_b,
+                                                                                            Re_phi_t_add_b, Im_phi_t_add_b, init_rem_norm_b, init_add_norm_b, delta_t, e_cas, orb, orb, mc, h1eff, v2e, False)
+            
+        if(nelecas[0]==nelecas[1]):
+          density_of_states_rem += gf_imag_rem*2.0
+          real_part_rem += gf_real_rem*2.0
+          density_of_states_add += gf_imag_add*2.0
+          real_part_add += gf_real_add*2.0
+        else:
+          density_of_states_rem += gf_imag_rem+gf_imag_rem_b
+          real_part_rem += gf_real_rem+gf_real_rem_b
+          print "VEDIAMO ", gf_real_rem+gf_real_rem_b
+          density_of_states_add += gf_imag_add+gf_imag_add_b
+          real_part_add += gf_real_add+gf_real_add_b
+         
 
     frq = np.fft.fftfreq(npoints,delta_t)
     frq = np.fft.fftshift(frq)*2.0*np.pi

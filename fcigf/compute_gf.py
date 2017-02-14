@@ -125,7 +125,7 @@ def solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, io
 # G_pq(i iomega) = <|a_p^dag 1.0/(i iomega + H - E_0 + i delta) a_q|>
 # Takes full set of one-electron integrals in the MO basis
 # Takes full set of two-electron integtals in the MO basis in Chemist's notation
-def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, maxiter):
+def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, maxiter, is_alpha = True):
 
     # Get information about CASSCF
     fcivec = casscf.ci
@@ -135,9 +135,15 @@ def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, 
     nocc = ncore + ncas
 
     # Compute N-1 electron CI space a_q|> 
-    q_cas = pyscf.fci.addons.des_a(fcivec, ncas, nelecas, q)
-    nalpha = nelecas[0] - 1
+    q_cas = None
+    nalpha = nelecas[0]
     nbeta = nelecas[1]
+    if (is_alpha):
+       q_cas = pyscf.fci.addons.des_a(fcivec, ncas, nelecas, q)
+       nalpha = nelecas[0] - 1
+    else:
+       q_cas = pyscf.fci.addons.des_b(fcivec, ncas, nelecas, q)
+       nbeta = nelecas[1] - 1
 
     # Iterate imaginary part of the Green's function
     print "\nIterating imaginary part of the Green's function (removal):"
@@ -174,10 +180,20 @@ def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, 
     rvec = solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, romega, iomega, delta, e_zero, rvec, b, tol, maxiter)
 
     # Compute N-1 electron CI space <|a_p^dag
-    p_cas = pyscf.fci.addons.des_a(fcivec, ncas, nelecas, p)
+    p_cas = None
+    if (is_alpha):
+       p_cas = pyscf.fci.addons.des_a(fcivec, ncas, nelecas, p)
+    else:
+       p_cas = pyscf.fci.addons.des_b(fcivec, ncas, nelecas, p)
 
-    g_imag = 2 * np.dot(np.ravel(ivec), np.ravel(p_cas))
-    g_real = 2 * np.dot(np.ravel(rvec), np.ravel(p_cas))
+    g_imag = None
+    g_real = None
+    if (nelecas[0]==nelecas[1]):
+       g_imag = 2 * np.dot(np.ravel(ivec), np.ravel(p_cas))
+       g_real = 2 * np.dot(np.ravel(rvec), np.ravel(p_cas))
+    else:
+       g_imag = np.dot(np.ravel(ivec), np.ravel(p_cas))
+       g_real = np.dot(np.ravel(rvec), np.ravel(p_cas))
 
     return g_real, g_imag
 
@@ -186,7 +202,7 @@ def gf_removal(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, 
 # G_pq(i iomega) = <|a_p 1.0/(i iomega - H + E_0 + i delta) a_q^dag |>
 # Takes full set of one-electron integrals in the MO basis
 # Takes full set of two-electron integtals in the MO basis in Chemist's notation
-def gf_addition(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, maxiter):
+def gf_addition(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf, maxiter, is_alpha=True):
 
     # Get information about CASSCF
     fcivec = casscf.ci
@@ -196,9 +212,15 @@ def gf_addition(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf,
     nocc = ncore + ncas
 
     # Compute N+1 electron CI space a_q^dag |> 
-    q_cas = pyscf.fci.addons.cre_a(fcivec, ncas, nelecas, q)
-    nalpha = nelecas[0] + 1
+    q_cas = None
+    nalpha = nelecas[0]
     nbeta = nelecas[1]
+    if (is_alpha):
+       q_cas = pyscf.fci.addons.cre_a(fcivec, ncas, nelecas, q)
+       nalpha = nelecas[0] + 1
+    else:
+       q_cas = pyscf.fci.addons.cre_b(fcivec, ncas, nelecas, q)
+       nbeta = nelecas[1] + 1
 
     # Iterate imaginary part of the Green's function
     print "\nIterating imaginary part of the Green's function (addition):"
@@ -228,34 +250,27 @@ def gf_addition(romega, iomega, delta, e_zero, p, q, casscf, h1eff, eri, tol_gf,
     ham_i = apply_H(h1eff, eri, nalpha, nbeta, ncore, ncas, ivec)
     rvec = - (1/(iomega + delta)) * (-ham_i + (romega + e_zero) * ivec)
 
-    #==DEBUG==============================================
-    print "NORM ivec : ", np.linalg.norm(ivec)
-    print "NORM rvec : ", np.linalg.norm(rvec)
-    rrvec = (-ham_i + (e_zero) * ivec)
-    print "NORM rvec no omega-1/eta : ", np.linalg.norm(rrvec)
-    rrvec = (-ham_i + (romega + e_zero) * ivec)
-    print "NORM rvec no -1/eta : ", np.linalg.norm(rrvec)
-    #==DEBUG==============================================
-
     # b = (-H + romega + E_0) * a_q^dag |> 
     b = -apply_H(h1eff, eri, nalpha, nbeta, ncore, ncas, q_cas) + (romega + e_zero) * q_cas
-
-    #==DEBUG==============================================
-    print "NORM b : ", np.linalg.norm(b)
-    #==DEBUG==============================================
 
     # Solve for real part
     rvec = solve_conjugate_gradients(h1eff, eri, nalpha, nbeta, ncore, ncas, -romega, iomega, delta, e_zero, rvec, b, tol, maxiter)
 
-    #==DEBUG==============================================
-    print "NORM rvec final : ", np.linalg.norm(rvec)
-    #==DEBUG==============================================
-
     # Compute N+1 electron CI space <|a_p
-    p_cas = pyscf.fci.addons.cre_a(fcivec, ncas, nelecas, p)
+    p_cas = None
+    if (is_alpha):
+       p_cas = pyscf.fci.addons.cre_a(fcivec, ncas, nelecas, p)
+    else:
+       p_cas = pyscf.fci.addons.cre_b(fcivec, ncas, nelecas, p)
 
-    g_imag = 2 * np.dot(np.ravel(ivec), np.ravel(p_cas))
-    g_real = 2 * np.dot(np.ravel(rvec), np.ravel(p_cas))
+    g_imag = None
+    g_real = None
+    if (nelecas[0]==nelecas[1]):
+       g_imag = 2 * np.dot(np.ravel(ivec), np.ravel(p_cas))
+       g_real = 2 * np.dot(np.ravel(rvec), np.ravel(p_cas))
+    else:
+       g_imag = np.dot(np.ravel(ivec), np.ravel(p_cas))
+       g_real = np.dot(np.ravel(rvec), np.ravel(p_cas))
 
     return g_real, g_imag
 

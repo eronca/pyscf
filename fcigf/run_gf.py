@@ -75,6 +75,11 @@ def run_gf_casscf(mc, mf, mol, emc, omega, omega_real, delta, npoints, maxiter, 
     gf_imag_removal = np.zeros((ncas,ncas))
     gf_real_addition = np.zeros((ncas,ncas))
     gf_imag_addition = np.zeros((ncas,ncas))
+
+    gf_real_removal_b = np.zeros((ncas,ncas))
+    gf_imag_removal_b = np.zeros((ncas,ncas))
+    gf_real_addition_b = np.zeros((ncas,ncas))
+    gf_imag_addition_b = np.zeros((ncas,ncas))
     
     # Range
     omega_range = omega[1] - omega[0]
@@ -115,10 +120,24 @@ def run_gf_casscf(mc, mf, mol, emc, omega, omega_real, delta, npoints, maxiter, 
                 print "\nGF({0:d},{1:d}):".format(p, p)
                 gf_real_addition[p,p], gf_imag_addition[p,p] = gf_addition(romega, iomega, delta, e_cas, p, p, mc, h1eff, v2e, tol_gf, maxiter)
                 gf_real_removal[p,p], gf_imag_removal[p,p] = gf_removal(romega, iomega, delta, e_cas, p, p, mc, h1eff, v2e, tol_gf, maxiter)
-        
-            gf_real_trace.append(np.trace(gf_real_removal + gf_real_addition))
-            gf_imag_trace.append(np.trace(gf_imag_removal + gf_imag_addition))
-            dos = -(1/math.pi) * np.trace(gf_imag_removal + gf_imag_addition)
+                if (mc.nelecas[0]!=mc.nelecas[1]):
+                   gf_real_addition_b[p,p], gf_imag_addition_b[p,p] = gf_addition(romega, iomega, delta, e_cas, p, p, mc, h1eff, v2e, tol_gf, maxiter, False)
+                   gf_real_removal_b[p,p], gf_imag_removal_b[p,p] = gf_removal(romega, iomega, delta, e_cas, p, p, mc, h1eff, v2e, tol_gf, maxiter, False)
+       
+            if (nelecas[0] == nelecas[1]): 
+               gf_real_trace.append(np.trace(gf_real_removal + gf_real_addition))
+               gf_imag_trace.append(np.trace(gf_imag_removal + gf_imag_addition))
+            else:
+               gf_real_trace.append(np.trace(gf_real_removal + gf_real_addition + gf_real_removal_b + gf_real_addition_b))
+               gf_imag_trace.append(np.trace(gf_imag_removal + gf_imag_addition + gf_imag_removal_b + gf_imag_addition_b))
+
+            dos = None
+            if (nelecas[0] == nelecas[1]): 
+               print "CLOSED SHELL", nelecas
+               dos = -(1/math.pi) * np.trace(gf_imag_removal + gf_imag_addition)
+            else:
+               print "OPEN SHELL", nelecas
+               dos = -(1/math.pi) * np.trace(gf_imag_removal + gf_imag_addition + gf_imag_removal_b + gf_imag_addition_b)
             density_of_states.append(dos)
             print "Density of states (interacting):             ", dos
             
@@ -153,8 +172,17 @@ def run_gf_casscf(mc, mf, mol, emc, omega, omega_real, delta, npoints, maxiter, 
                     print "\nGF({0:d},{1:d}):".format(p, q)
                     gf_real_addition[p,q], gf_imag_addition[p,q] = gf_addition(romega, iomega, delta, e_cas, p, q, mc, h1eff, v2e, tol_gf, maxiter)
                     gf_real_removal[p,q], gf_imag_removal[p,q] = gf_removal(romega, iomega, delta, e_cas, q, p, mc, h1eff, v2e, tol_gf, maxiter)
+                    if (mc.nelecas[0]!=mc.nelecas[1]):
+                       gf_real_addition_b[p,q], gf_imag_addition_b[p,q] = gf_addition(romega, iomega, delta, e_cas, p, q, mc, h1eff, v2e, tol_gf, maxiter, False)
+                       gf_real_removal_b[p,q], gf_imag_removal_b[p,q] = gf_removal(romega, iomega, delta, e_cas, q, p, mc, h1eff, v2e, tol_gf, maxiter, False)
             
-            gf_cas = (gf_real_addition + gf_real_removal) + 1j * (gf_imag_addition + gf_imag_removal)
+            gf_cas = None
+            if (nelecas[0] == nelecas[1]):
+               print "CLOSED SHELL", nelecas
+               gf_cas = (gf_real_addition + gf_real_removal) + 1j * (gf_imag_addition + gf_imag_removal)
+            else:
+               print "OPEN SHELL", nelecas
+               gf_cas = (gf_real_addition + gf_real_removal + gf_real_addition_b + gf_real_removal_b) + 1j * (gf_imag_addition + gf_imag_removal + gf_imag_addition_b + gf_imag_removal_b)
         
             # Compute mean-field Green's function in the AO basis
             gf_mf_ao = gf_mean_field(romega, iomega, delta, mf)
