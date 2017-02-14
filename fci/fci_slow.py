@@ -4,17 +4,18 @@
 #
 
 import numpy
-import pyscf.lib
+from pyscf import lib
+from pyscf import ao2mo
 from pyscf.fci import cistring
 
 def contract_1e(f1e, fcivec, norb, nelec):
-    if isinstance(nelec, (int, numpy.number)):
+    if isinstance(nelec, (int, numpy.integer)):
         nelecb = nelec//2
         neleca = nelec - nelecb
     else:
         neleca, nelecb = nelec
-    link_indexa = cistring.gen_linkstr_index_o0(range(norb), neleca)
-    link_indexb = cistring.gen_linkstr_index_o0(range(norb), nelecb)
+    link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
+    link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
     na = cistring.num_strings(norb, neleca)
     nb = cistring.num_strings(norb, nelecb)
     ci0 = fcivec.reshape(na,nb)
@@ -30,13 +31,13 @@ def contract_1e(f1e, fcivec, norb, nelec):
 
 
 def contract_2e(eri, fcivec, norb, nelec, opt=None):
-    if isinstance(nelec, (int, numpy.number)):
+    if isinstance(nelec, (int, numpy.integer)):
         nelecb = nelec//2
         neleca = nelec - nelecb
     else:
         neleca, nelecb = nelec
-    link_indexa = cistring.gen_linkstr_index_o0(range(norb), neleca)
-    link_indexb = cistring.gen_linkstr_index_o0(range(norb), nelecb)
+    link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
+    link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
     na = cistring.num_strings(norb, neleca)
     nb = cistring.num_strings(norb, nelecb)
     ci0 = fcivec.reshape(na,nb)
@@ -109,13 +110,14 @@ def contract_2e_hubbard(u, fcivec, norb, nelec, opt=None):
                     fcinew[:,addr] += t1b[i,:,addr] * u_bb
     return fcinew
 
+
 def absorb_h1e(h1e, eri, norb, nelec, fac=1):
     '''Modify 2e Hamiltonian to include 1e Hamiltonian contribution.
     '''
-    if not isinstance(nelec, (int, numpy.number)):
+    if not isinstance(nelec, (int, numpy.integer)):
         nelec = sum(nelec)
     eri = eri.copy()
-    h2e = pyscf.ao2mo.restore(1, eri, norb)
+    h2e = ao2mo.restore(1, eri, norb)
     f1e = h1e - numpy.einsum('jiik->jk', h2e) * .5
     f1e = f1e * (1./(nelec+1e-100))
     for k in range(norb):
@@ -125,15 +127,15 @@ def absorb_h1e(h1e, eri, norb, nelec, fac=1):
 
 
 def make_hdiag(h1e, g2e, norb, nelec, opt=None):
-    if isinstance(nelec, (int, numpy.number)):
+    if isinstance(nelec, (int, numpy.integer)):
         nelecb = nelec//2
         neleca = nelec - nelecb
     else:
         neleca, nelecb = nelec
-    link_indexa = cistring.gen_linkstr_index_o0(range(norb), neleca)
-    link_indexb = cistring.gen_linkstr_index_o0(range(norb), nelecb)
-    occslista = [tab[:neleca,0] for tab in link_indexa]
-    occslistb = [tab[:nelecb,0] for tab in link_indexb]
+    occslista = [[i for i in range(neleca) if str0 & (1<<i)]
+                 for str0 in cistring.gen_strings4orblist(range(norb), neleca)]
+    occslistb = [[i for i in range(nelecb) if str0 & (1<<i)]
+                 for str0 in cistring.gen_strings4orblist(range(norb), nelecb)]
     g2e = ao2mo.restore(1, g2e, norb)
     diagj = numpy.einsum('iijj->ij',g2e)
     diagk = numpy.einsum('ijji->ij',g2e)
@@ -147,7 +149,7 @@ def make_hdiag(h1e, g2e, norb, nelec, opt=None):
             hdiag.append(e1 + e2*.5)
     return numpy.array(hdiag)
 
-def kernel(h1e, g2e, norb, nelec):
+def kernel(h1e, g2e, norb, nelec, ecore=0):
 
     h2e = absorb_h1e(h1e, g2e, norb, nelec, .5)
 
@@ -160,8 +162,8 @@ def kernel(h1e, g2e, norb, nelec):
         return hc.reshape(-1)
     hdiag = make_hdiag(h1e, g2e, norb, nelec)
     precond = lambda x, e, *args: x/(hdiag-e+1e-4)
-    e, c = pyscf.lib.davidson(hop, ci0.reshape(-1), precond)
-    return e
+    e, c = lib.davidson(hop, ci0.reshape(-1), precond)
+    return e+ecore
 
 
 # dm_pq = <|p^+ q|>
@@ -174,9 +176,8 @@ def make_rdm1(fcivec, norb, nelec, opt=None):
         for a, i, str1, sign in link_index[str0]:
             rdm1[a,i] += sign * numpy.dot(fcivec[str1],fcivec[str0])
     for str0, tab in enumerate(link_index):
-        for k in range(na):
-            for a, i, str1, sign in link_index[str0]:
-                rdm1[a,i] += sign * fcivec[k,str1]*fcivec[k,str0]
+        for a, i, str1, sign in link_index[str0]:
+            rdm1[a,i] += sign * numpy.dot(fcivec[:,str1],fcivec[:,str0])
     return rdm1
 
 # dm_pq,rs = <|p^+ q r^+ s|>
@@ -190,8 +191,7 @@ def make_rdm12(fcivec, norb, nelec, opt=None):
     for str0, tab in enumerate(link_index):
         t1 = numpy.zeros((na,norb,norb))
         for a, i, str1, sign in link_index[str0]:
-            for k in range(na):
-                t1[k,i,a] += sign * fcivec[str1,k]
+            t1[:,i,a] += sign * fcivec[str1,:]
 
         for k, tab in enumerate(link_index):
             for a, i, str1, sign in tab:
@@ -206,7 +206,7 @@ def make_rdm12(fcivec, norb, nelec, opt=None):
 def reorder_rdm(rdm1, rdm2):
     '''reorder from rdm2(pq,rs) = <E^p_q E^r_s> to rdm2(pq,rs) = <e^{pr}_{qs}>.
     Although the "reoredered rdm2" is still in Mulliken order (rdm2[e1,e1,e2,e2]),
-    it is the right 2e DM (dotting it with int2e gives the energy of 2e parts)
+    it is the true 2e DM (dotting it with int2e gives the energy of 2e parts)
     '''
     nmo = rdm1.shape[0]
     if inplace:
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     norb = m.mo_coeff.shape[1]
     nelec = mol.nelectron - 2
     h1e = reduce(numpy.dot, (m.mo_coeff.T, m.get_hcore(), m.mo_coeff))
-    eri = ao2mo.incore.general(m._eri, (m.mo_coeff,)*4, compact=False)
+    eri = ao2mo.kernel(m._eri, m.mo_coeff, compact=False)
     eri = eri.reshape(norb,norb,norb,norb)
 
     e1 = kernel(h1e, eri, norb, nelec)

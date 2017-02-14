@@ -6,8 +6,7 @@ Simple usage::
 
     >>> from pyscf import gto, scf, mcscf
     >>> mol = gto.M(atom='N 0 0 0; N 0 0 1', basis='ccpvdz', verbose=0)
-    >>> mf = scf.RHF(mol)
-    >>> mf.scf()
+    >>> mf = scf.RHF(mol).run()
     >>> mc = mcscf.CASCI(mf, 6, 6)
     >>> mc.kernel()[0]
     -108.980200816243354
@@ -102,6 +101,10 @@ The Following attributes are used for CASSCF
         space.  Depending on systems, increasing this value migh reduce the
         total number of macro iterations.  The value between 2 - 8 is preferred.
         Default is 4.
+    frozen : int or list
+        If integer is given, the inner-most orbitals are excluded from optimization.
+        Given the orbital indices (0-based) in a list, any doubly occupied core
+        orbitals, active orbitals and external orbitals can be frozen.
     ah_level_shift : float, for AH solver.
         Level shift for the Davidson diagonalization in AH solver.  Default is 0.
     ah_conv_tol : float, for AH solver.
@@ -179,6 +182,10 @@ In the new API, the first argument of CASSCF/CASCI class is HF objects.  e.g.
 Please see   http://sunqm.net/pyscf/code-rule.html#api-rules   for the details
 of API conventions''')
 
+    if hasattr(mf, 'with_df') and 'pbc' in str(mf.__module__):
+        mf = _convert_to_rhf(mf, False)
+        return DFCASSCF(mf, ncas, nelecas, **kwargs)
+
     mf = _convert_to_rhf(mf)
     if mf.mol.symmetry:
         mc = mc1step_symm.CASSCF(mf, ncas, nelecas, **kwargs)
@@ -198,6 +205,10 @@ In the new API, the first argument of CASSCF/CASCI class is HF objects.  e.g.
         mc = mcscf.CASCI(mf, norb, nelec)
 Please see   http://sunqm.net/pyscf/code-rule.html#api-rules   for the details
 of API conventions''')
+
+    if hasattr(mf, 'with_df') and 'pbc' in str(mf.__module__):
+        mf = _convert_to_rhf(mf, False)
+        return DFCASCI(mf, ncas, nelecas, **kwargs)
 
     mf = _convert_to_rhf(mf)
     if mf.mol.symmetry:
@@ -241,7 +252,7 @@ def _convert_to_rhf(mf, convert_df=True):
 
     # Avoid doing density fitting
     if (convert_df and hasattr(mf, 'with_df') and
-        isinstance(mf.with_df, (pyscf.df.DF, pyscf.df.XDF))):
+        isinstance(mf.with_df, (pyscf.df.DF, pyscf.df.MDF))):
         mf = copy.copy(mf)
         logger.warn(mf, 'CASSCF: The first argument is a density-fitting SCF object. '
                     'Its orbitals are taken as the initial guess of CASSCF.\n'

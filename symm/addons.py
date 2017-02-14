@@ -52,11 +52,15 @@ def label_orb_symm(mol, irrep_name, symm_orb, mo, s=None, check=True, tol=1e-9):
     for i, csym in enumerate(symm_orb):
         moso = numpy.dot(mo_s, csym)
         ovlpso = reduce(numpy.dot, (csym.T, s, csym))
-        norm[i] = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
+        try:
+            norm[i] = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
+        except:
+            ovlpso[numpy.diag_indices(csym.shape[1])] += 1e-12
+            norm[i] = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
     norm /= numpy.sum(norm, axis=0)  # for orbitals which are not normalized
     iridx = numpy.argmax(norm, axis=0)
-    orbsym = [irrep_name[i] for i in iridx]
-    logger.debug(mol, 'irreps of each MO %s', str(orbsym))
+    orbsym = numpy.asarray([irrep_name[i] for i in iridx])
+    logger.debug(mol, 'irreps of each MO %s', orbsym)
     if check:
         largest_norm = norm[iridx,numpy.arange(nmo)]
         orbidx = numpy.where(largest_norm < 1-tol)[0]
@@ -69,11 +73,11 @@ def label_orb_symm(mol, irrep_name, symm_orb, mo, s=None, check=True, tol=1e-9):
                 logger.warn(mol, 'orbitals %s not strictly symmetrized.',
                             numpy.unique(orbidx))
                 logger.warn(mol, 'They can be symmetrized with '
-                            'pyscf.symm.symmetrize_orb function.')
+                            'pyscf.symm.symmetrize_space function.')
                 logger.debug(mol, 'norm = %s', largest_norm[orbidx])
     return orbsym
 
-def symmetrize_orb(mol, mo, orbsym=None, s=None):
+def symmetrize_orb(mol, mo, orbsym=None, s=None, check=False):
     '''Symmetrize the given orbitals.
 
     This function is different to the :func:`symmetrize_space`:  In this
@@ -115,7 +119,7 @@ def symmetrize_orb(mol, mo, orbsym=None, s=None):
         s = mol.intor_symmetric('cint1e_ovlp_sph')
     if orbsym is None:
         orbsym = label_orb_symm(mol, mol.irrep_id, mol.symm_orb,
-                                mo, s=s, check=False)
+                                mo, s=s, check=check)
     orbsym = numpy.asarray(orbsym)
     mo_s = numpy.dot(mo.T, s)
     mo1 = numpy.empty_like(mo)
@@ -133,7 +137,7 @@ def symmetrize_orb(mol, mo, orbsym=None, s=None):
         mo1[:,idx] = numpy.dot(csym, sc)
     return mo1
 
-def symmetrize_space(mol, mo, s=None):
+def symmetrize_space(mol, mo, s=None, check=True):
     '''Symmetrize the given orbital space.
 
     This function is different to the :func:`symmetrize_orb`:  In this function,
@@ -167,14 +171,19 @@ def symmetrize_space(mol, mo, s=None):
         s = mol.intor_symmetric('cint1e_ovlp_sph')
     nmo = mo.shape[1]
     mo_s = numpy.dot(mo.T, s)
-    assert(numpy.allclose(numpy.dot(mo_s, mo), numpy.eye(nmo)))
+    if check:
+        assert(numpy.allclose(numpy.dot(mo_s, mo), numpy.eye(nmo)))
     mo1 = []
     for i, csym in enumerate(mol.symm_orb):
         moso = numpy.dot(mo_s, csym)
         ovlpso = reduce(numpy.dot, (csym.T, s, csym))
 
 # excluding orbitals which are already symmetrized
-        diag = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
+        try:
+            diag = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
+        except:
+            ovlpso[numpy.diag_indices(csym.shape[1])] += 1e-12
+            diag = numpy.einsum('ik,ki->i', moso, lib.cho_solve(ovlpso, moso.T))
         idx = abs(1-diag) < 1e-8
         orb_exclude = mo[:,idx]
         mo1.append(orb_exclude)
@@ -190,7 +199,7 @@ def symmetrize_space(mol, mo, s=None):
                          'probably because the input mol and orbitals are of '
                          'different orientation.')
     snorm = numpy.linalg.norm(reduce(numpy.dot, (mo1.T, s, mo1)) - numpy.eye(nmo))
-    if snorm > 1e-6:
+    if check and snorm > 1e-6:
         raise ValueError('Orbitals are not orthogonalized')
     idx = mo_mapping.mo_1to1map(reduce(numpy.dot, (mo.T, s, mo1)))
     return mo1[:,idx]

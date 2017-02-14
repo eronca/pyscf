@@ -11,10 +11,8 @@ import sys
 import time
 from functools import reduce
 import numpy
-import pyscf.lib
-import pyscf.gto
+from pyscf import lib
 from pyscf.lib import logger
-import pyscf.lib.parameters as param
 from pyscf import scf
 from pyscf.scf import _vhf
 from pyscf.scf import rhf_nmr
@@ -93,7 +91,7 @@ def make_h10giao(mol, dm0, with_gaunt=False, verbose=logger.WARN):
     log.debug('first order Fock matrix / GIAOs')
     n4c = dm0.shape[0]
     n2c = n4c // 2
-    c = mol.light_speed
+    c = lib.param.LIGHT_SPEED
 
     tg = mol.intor('cint1e_spgsp', 3)
     vg = mol.intor('cint1e_gnuc', 3)
@@ -149,7 +147,7 @@ def make_h10rmb(mol, dm0, gauge_orig=None, with_gaunt=False,
     log.debug('first order Fock matrix / RMB')
     n4c = dm0.shape[0]
     n2c = n4c // 2
-    c = mol.light_speed
+    c = lib.param.LIGHT_SPEED
     if gauge_orig is None:
         t1 = mol.intor('cint1e_giao_sa10sp', 3)
         v1 = mol.intor('cint1e_giao_sa10nucsp', 3)
@@ -198,7 +196,7 @@ def make_s10(mol, gauge_orig=None, mb='RMB'):
         mol.set_common_origin(gauge_orig)
     n2c = mol.nao_2c()
     n4c = n2c * 2
-    c = mol.light_speed
+    c = lib.param.LIGHT_SPEED
     s1 = numpy.zeros((3, n4c, n4c), complex)
     if mb.upper() == 'RMB':
         if gauge_orig is None:
@@ -236,7 +234,7 @@ class NMR(rhf_nmr.NMR):
         if self.verbose >= logger.WARN:
             self.check_sanity()
 
-        facppm = 1e6/param.LIGHTSPEED**2
+        facppm = 1e6/lib.param.LIGHT_SPEED**2
         t0 = (time.clock(), time.time())
         msc_dia = self.dia() * facppm
         t0 = logger.timer(self, 'h11', *t0)
@@ -245,14 +243,14 @@ class NMR(rhf_nmr.NMR):
         e11 = msc_para + msc_dia
 
         logger.timer(self, 'NMR shielding', *cput0)
-        if self.verbose > param.VERBOSE_QUIET:
+        if self.verbose > logger.VERBOSE_QUIET:
             for i, atm_id in enumerate(self.shielding_nuc):
                 rhf_nmr._write(self.stdout, e11[i],
                                '\ntotal shielding of atom %d %s'
                                % (atm_id, self.mol.atom_symbol(atm_id-1)))
                 rhf_nmr._write(self.stdout, msc_dia[i], 'dia-magnetism')
                 rhf_nmr._write(self.stdout, msc_para[i], 'para-magnetism')
-                if self.verbose >= param.VERBOSE_INFO:
+                if self.verbose >= logger.VERBOSE_INFO:
                     rhf_nmr._write(self.stdout, para_occ[i], 'occ part of para-magnetism')
                     rhf_nmr._write(self.stdout, para_pos[i], 'vir-pos part of para-magnetism')
                     rhf_nmr._write(self.stdout, para_neg[i], 'vir-neg part of para-magnetism')
@@ -296,13 +294,13 @@ class NMR(rhf_nmr.NMR):
             h1 = make_h10rkb(mol, dm0, gauge_orig,
                              with_gaunt=self._scf.with_gaunt, verbose=log)
         t0 = log.timer('%s h1'%self.mb, *t0)
-        pyscf.scf.chkfile.dump(self.chkfile, 'nmr/h1', h1)
+        scf.chkfile.dump(self.chkfile, 'nmr/h1', h1)
 
         if gauge_orig is None:
             h1 += make_h10giao(mol, dm0,
                                with_gaunt=self._scf.with_gaunt, verbose=log)
         t0 = log.timer('GIAO', *t0)
-        pyscf.scf.chkfile.dump(self.chkfile, 'nmr/h1giao', h1)
+        scf.chkfile.dump(self.chkfile, 'nmr/h1giao', h1)
         return h1
 
     def make_s10(self, mol=None, gauge_orig=None):
@@ -322,7 +320,7 @@ class NMR(rhf_nmr.NMR):
         return rhf_nmr._mat_ao2mo(v_ao, mo_coeff, mo_occ)
 
 def _call_rmb_vhf1(mol, dm, key='giao'):
-    c1 = .5/mol.light_speed
+    c1 = .5 / lib.param.LIGHT_SPEED
     n2c = dm.shape[0] // 2
     dmll = dm[:n2c,:n2c].copy()
     dmls = dm[:n2c,n2c:].copy()
@@ -334,7 +332,7 @@ def _call_rmb_vhf1(mol, dm, key='giao'):
                             ('ji->s2kl', 'lk->s1ij', 'jk->s1il', 'li->s1kj'),
                             dmss, 3, mol._atm, mol._bas, mol._env) * c1**4
     for i in range(3):
-        vx[0,i] = pyscf.lib.hermi_triu(vx[0,i], 2)
+        vx[0,i] = lib.hermi_triu(vx[0,i], 2)
     vj[:,n2c:,n2c:] = vx[0] + vx[1]
     vk[:,n2c:,n2c:] = vx[2] + vx[3]
 
@@ -343,7 +341,7 @@ def _call_rmb_vhf1(mol, dm, key='giao'):
                             (dmll,dmss,dmsl,dmls), 3,
                             mol._atm, mol._bas, mol._env) * c1**2
     for i in range(3):
-        vx[1,i] = pyscf.lib.hermi_triu(vx[1,i], 2)
+        vx[1,i] = lib.hermi_triu(vx[1,i], 2)
     vj[:,n2c:,n2c:] += vx[0]
     vj[:,:n2c,:n2c] += vx[1]
     vk[:,n2c:,:n2c] += vx[2]
@@ -354,7 +352,7 @@ def _call_rmb_vhf1(mol, dm, key='giao'):
     return vj, vk
 
 def _call_giao_vhf1(mol, dm):
-    c1 = .5/mol.light_speed
+    c1 = .5 / lib.param.LIGHT_SPEED
     n2c = dm.shape[0] // 2
     dmll = dm[:n2c,:n2c].copy()
     dmls = dm[:n2c,n2c:].copy()
@@ -383,7 +381,7 @@ def _call_giao_vhf1(mol, dm):
     vj[:,n2c:,n2c:] += vx[0]
     vk[:,n2c:,:n2c] += vx[1]
     for i in range(3):
-        vj[i] = pyscf.lib.hermi_triu(vj[i], 1)
+        vj[i] = lib.hermi_triu(vj[i], 1)
         vk[i] = vk[i] + vk[i].T.conj()
     return vj, vk
 

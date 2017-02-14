@@ -9,20 +9,21 @@ import ctypes
 import numpy
 import h5py
 from pyscf.dft.numint import _dot_ao_ao, _dot_ao_dm, BLKSIZE
-import pyscf.lib
-import pyscf.dft
+from pyscf import lib
+from pyscf import dft
 from pyscf.pbc import tools
 
-libpbc = pyscf.lib.load_library('libpbc')
+libpbc = lib.load_library('libpbc')
 
 try:
 ## Moderate speedup by caching eval_ao
+    from pyscf import pbc
     from joblib import Memory
     memory = Memory(cachedir='./tmp/', mmap_mode='r', verbose=0)
     def memory_cache(f):
         g = memory.cache(f)
         def maybe_cache(*args, **kwargs):
-            if pyscf.pbc.DEBUG:
+            if pbc.DEBUG:
                 return g(*args, **kwargs)
             else:
                 return f(*args, **kwargs)
@@ -98,7 +99,7 @@ def eval_ao_kpts(cell, coords, kpts=None, deriv=0, relativity=0,
     out_ptrs = (ctypes.c_void_p*nkpts)(
             *[x.ctypes.data_as(ctypes.c_void_p) for x in ao_kpts])
     coords = numpy.asarray(coords, order='C')
-    Ls = numpy.asarray(cell.get_lattice_Ls(cell.nimgs), order='C')
+    Ls = cell.get_lattice_Ls()
     expLk = numpy.exp(1j * numpy.asarray(numpy.dot(Ls, kpts.T), order='C'))
 
     drv = getattr(libpbc, 'PBCval_sph_deriv%d' % deriv)
@@ -116,11 +117,11 @@ def eval_ao_kpts(cell, coords, kpts=None, deriv=0, relativity=0,
     for k, kpt in enumerate(kpts):
         mat = ao_kpts[k].transpose(2,0,1)
         if comp == 1:
-            aos = pyscf.lib.transpose(mat[0].T)
+            aos = lib.transpose(mat[0].T)
         else:
             aos = numpy.empty((comp,ngrids,nao), dtype=numpy.complex128)
             for i in range(comp):
-                pyscf.lib.transpose(mat[i].T, out=aos[i])
+                lib.transpose(mat[i].T, out=aos[i])
 
         if abs(kpt).sum() < 1e-9:  # gamma point
             aos = aos.real.copy()
@@ -222,7 +223,7 @@ def eval_rho(cell, ao, dm, non0tab=None, xctype='LDA', verbose=None):
 
     # real orbitals and real DM
     else:
-        rho = pyscf.dft.numint.eval_rho(cell, ao, dm, non0tab, xctype, verbose)
+        rho = dft.numint.eval_rho(cell, ao, dm, non0tab, xctype, verbose)
 
     return rho
 
@@ -256,7 +257,7 @@ def eval_mat(cell, ao, weight, rho, vxc,
             If the kwarg spin is not 0, a list [vsigma_uu,vsigma_ud] is required.
 
     See Also:
-        pyscf.dft.numint.eval_mat
+        dft.numint.eval_mat
 
     '''
 
@@ -327,8 +328,8 @@ def eval_mat(cell, ao, weight, rho, vxc,
         return (mat + mat.T.conj())
 
     else:
-        return pyscf.dft.numint.eval_mat(cell, ao, weight, rho, vxc,
-                                         non0tab, xctype, spin, verbose)
+        return dft.numint.eval_mat(cell, ao, weight, rho, vxc,
+                                   non0tab, xctype, spin, verbose)
 
 
 def nr_rks(ni, cell, grids, xc_code, dm, spin=0, relativity=0, hermi=1,
@@ -423,6 +424,9 @@ def nr_rks(ni, cell, grids, xc_code, dm, spin=0, relativity=0, hermi=1,
                 excsum[i] += (den*exc).sum()
                 vmat[i] += ni.eval_mat(cell, ao_k1, weight, rho, vxc,
                                        mask, xctype, 0, verbose)
+
+    if kpt_band is not None:
+        vmat = [v.reshape(nao,nao) for v in vmat]
 
     if nset == 1:
         nelec = nelec[0]
@@ -558,12 +562,16 @@ def nr_uks(ni, cell, grids, xc_code, dm, spin=1, relativity=0, hermi=1,
                                         mask, xctype, 1, verbose)
                 v = None
 
+    if kpt_band is not None:
+        vmata = [v.reshape(nao,nao) for v in vmata]
+        vmatb = [v.reshape(nao,nao) for v in vmatb]
+
     if nset == 1:
         nelec = nelec[:,0]
         excsum = excsum[0]
         vmata = vmata[0]
         vmatb = vmatb[0]
-    return nelec, excsum, pyscf.lib.asarray((vmata,vmatb))
+    return nelec, excsum, lib.asarray((vmata,vmatb))
 
 nr_rks_vxc = nr_rks
 nr_uks_vxc = nr_uks
@@ -583,15 +591,15 @@ def large_rho_indices(ni, cell, dm, grids, cutoff=1e-10, kpt=numpy.zeros(3),
     return numpy.hstack(idx)
 
 
-class _NumInt(pyscf.dft.numint._NumInt):
+class _NumInt(dft.numint._NumInt):
     '''Generalization of pyscf's _NumInt class for a single k-point shift and
     periodic images.
     '''
     def __init__(self):
-        pyscf.dft.numint._NumInt.__init__(self)
+        dft.numint._NumInt.__init__(self)
         self.cell = None
 # cache AO values in ._ao
-        self._ao = tempfile.NamedTemporaryFile(suffix='numint')
+        self._ao = tempfile.NamedTemporaryFile(prefix='numint', dir=lib.param.TMPDIR)
         self._coords = None
         self._deriv = None
         self._kpt = None
@@ -621,13 +629,13 @@ class _NumInt(pyscf.dft.numint._NumInt):
             return self.nr_uks(cell, grids, xc_code, dms, hermi,
                                kpt, kpt_band, max_memory, verbose)
 
-    @pyscf.lib.with_doc(nr_rks.__doc__)
+    @lib.with_doc(nr_rks.__doc__)
     def nr_rks(self, cell, grids, xc_code, dms, hermi=1,
                kpt=numpy.zeros(3), kpt_band=None, max_memory=2000, verbose=None):
         return nr_rks(self, cell, grids, xc_code, dms,
                       0, 0, 1, kpt, kpt_band, max_memory, verbose)
 
-    @pyscf.lib.with_doc(nr_uks.__doc__)
+    @lib.with_doc(nr_uks.__doc__)
     def nr_uks(self, cell, grids, xc_code, dms, hermi=1,
                kpt=numpy.zeros(3), kpt_band=None, max_memory=2000, verbose=None):
         return nr_uks(self, cell, grids, xc_code, dms,
@@ -709,20 +717,20 @@ class _NumInt(pyscf.dft.numint._NumInt):
                     f['ao'][:,p0:p1] = self.eval_ao(cell, coords[p0:p1], kpt, deriv=deriv)
 
     def _gen_rho_evaluator(self, cell, dms, hermi=0):
-        return pyscf.dft.numint._NumInt._gen_rho_evaluator(self, cell, dms, 0)
+        return dft.numint._NumInt._gen_rho_evaluator(self, cell, dms, 0)
 
     large_rho_indices = large_rho_indices
 
 
-class _KNumInt(pyscf.dft.numint._NumInt):
+class _KNumInt(dft.numint._NumInt):
     '''Generalization of pyscf's _NumInt class for k-point sampling and
     periodic images.
     '''
     def __init__(self, kpts=numpy.zeros((1,3))):
-        pyscf.dft.numint._NumInt.__init__(self)
+        dft.numint._NumInt.__init__(self)
         self.kpts = numpy.reshape(kpts, (-1,3))
         self.cell = None
-        self._ao = tempfile.NamedTemporaryFile(prefix='numint')
+        self._ao = tempfile.NamedTemporaryFile(prefix='numint', dir=lib.param.TMPDIR)
         self._coords = None
         self._deriv = None
         self._kpts = None
@@ -768,7 +776,7 @@ class _KNumInt(pyscf.dft.numint._NumInt):
             return self.nr_uks(cell, grids, xc_code, dms, hermi,
                                kpts, kpt_band, max_memory, verbose)
 
-    @pyscf.lib.with_doc(nr_rks.__doc__)
+    @lib.with_doc(nr_rks.__doc__)
     def nr_rks(self, cell, grids, xc_code, dms, hermi=1, kpts=None, kpt_band=None,
                max_memory=2000, verbose=None, **kwargs):
         if kpts is None:
@@ -783,7 +791,7 @@ class _KNumInt(pyscf.dft.numint._NumInt):
         return nr_rks(self, cell, grids, xc_code, dms, 0, 0,
                       hermi, kpts, kpt_band, max_memory, verbose)
 
-    @pyscf.lib.with_doc(nr_uks.__doc__)
+    @lib.with_doc(nr_uks.__doc__)
     def nr_uks(self, cell, grids, xc_code, dms, hermi=1, kpts=None, kpt_band=None,
                max_memory=2000, verbose=None, **kwargs):
         if kpts is None:
@@ -804,7 +812,7 @@ class _KNumInt(pyscf.dft.numint._NumInt):
         mat = [eval_mat(cell, ao_kpts[k], weight, rho, vxc,
                         non0tab, xctype, spin, verbose)
                for k in range(nkpts)]
-        return pyscf.lib.asarray(mat)
+        return lib.asarray(mat)
 
     def block_loop(self, cell, grids, nao, deriv=0, kpts=numpy.zeros((1,3)),
                    kpt_band=None, max_memory=2000, non0tab=None, blksize=None):
@@ -825,7 +833,7 @@ class _KNumInt(pyscf.dft.numint._NumInt):
         else:
             kpt1 = kpt_band
             kpt2 = kpts
-            where = numpy.argmin(pyscf.lib.norm(kpts-kpt1,axis=1))
+            where = numpy.argmin(lib.norm(kpts-kpt1,axis=1))
             if abs(kpts[where]-kpt1).sum() > 1e-9:
                 where = None
 

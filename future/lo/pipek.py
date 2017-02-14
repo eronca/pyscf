@@ -9,9 +9,10 @@ import time
 import numpy
 import scipy.linalg
 
+from pyscf import lib
 from pyscf.lib import logger
 from pyscf.lib import linalg_helper
-from pyscf.scf import iah
+from pyscf.scf import ciah
 from pyscf.lo import orth
 from pyscf.lo import boys
 
@@ -28,7 +29,7 @@ def atomic_pops(mol, mo_coeff, method='meta_lowdin'):
             proj[i] = (csc + csc.T) * .5
 
     elif method.lower() in ('lowdin', 'meta_lowdin'):
-        csc = reduce(numpy.dot, (mo_coeff.T, s, orth.orth_ao(mol, method, s=s)))
+        csc = reduce(lib.dot, (mo_coeff.T, s, orth.orth_ao(mol, method, s=s)))
         for i, (b0, b1, p0, p1) in enumerate(mol.offset_nr_by_atom()):
             proj[i] = numpy.dot(csc[:,p0:p1], csc[:,p0:p1].T)
     else:
@@ -37,24 +38,18 @@ def atomic_pops(mol, mo_coeff, method='meta_lowdin'):
     return proj
 
 
-class PipekMezey(iah.IAHOptimizer):
+class PipekMezey(boys.Boys):
     def __init__(self, mol, mo_coeff=None):
-        iah.IAHOptimizer.__init__(self)
-        self.mol = mol
-        self.conv_tol = 1e-7
-        self.conv_tol_grad = None
-        self.max_cycle = 100
-        self.max_iters = 10
-        self.max_stepsize = .05
-        self.ah_start_cycle = 3
-        self.ah_trust_region = 3
-
+        boys.Boys.__init__(self, mol, mo_coeff)
         self.pop_method = 'meta_lowdin'
+        self._keys = self._keys.union(['pop_method'])
 
-        self.mo_coeff = mo_coeff
+    def dump_flags(self):
+        boys.Boys.dump_flags(self)
+        logger.info(self, 'pop_method = %s',self.pop_method)
 
     def gen_g_hop(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+        mo_coeff = lib.dot(self.mo_coeff, u)
         pop = atomic_pops(self.mol, mo_coeff, self.pop_method)
         g0 = numpy.einsum('xii,xip->pi', pop, pop)
         g = -self.pack_uniq_var(g0-g0.T) * 2
@@ -69,35 +64,28 @@ class PipekMezey(iah.IAHOptimizer):
         g0 = g0 + g0.T
         def h_op(x):
             x = self.unpack_uniq_var(x)
-            hx = numpy.einsum('iq,qp->pi', g0, x)
-            hx+= numpy.einsum('qi,xiq,xip->pi', x, pop, pop) * 2
-            hx-= numpy.einsum('qp,xpp,xiq->pi', x, pop, pop) * 2
-            hx-= numpy.einsum('qp,xip,xpq->pi', x, pop, pop) * 2
+            norb = x.shape[0]
+            hx = lib.dot(x.T, g0.T)
+            hx+= numpy.einsum('xip,xi->pi', pop, numpy.einsum('qi,xiq->xi', x, pop)) * 2
+            hx-= numpy.einsum('xpp,xip->pi', pop,
+                              lib.dot(pop.reshape(-1,norb), x).reshape(-1,norb,norb)) * 2
+            hx-= numpy.einsum('xip,xp->pi', pop, numpy.einsum('qp,xpq->xp', x, pop)) * 2
             return -self.pack_uniq_var(hx-hx.T)
 
         return g, h_op, h_diag
 
-    def get_grad(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+    def get_grad(self, u=None):
+        if u is None: u = numpy.eye(self.mo_coeff.shape[1])
+        mo_coeff = lib.dot(self.mo_coeff, u)
         pop = atomic_pops(self.mol, mo_coeff, self.pop_method)
         g = numpy.einsum('xii,xip->pi', pop, pop) * 2
         return -self.pack_uniq_var(g)
 
-    def cost_function(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+    def cost_function(self, u=None):
+        if u is None: u = numpy.eye(self.mo_coeff.shape[1])
+        mo_coeff = lib.dot(self.mo_coeff, u)
         pop = atomic_pops(self.mol, mo_coeff, self.pop_method)
         return numpy.einsum('xii,xii->', pop, pop)
-
-    def init_guess(self):
-        nmo = self.mo_coeff.shape[1]
-        u0 = numpy.eye(nmo)
-        if numpy.linalg.norm(self.get_grad(u0)) < 1e-5:
-            # Add noise to kick initial guess out of saddle point
-            dr = numpy.cos(numpy.arange((nmo-1)*nmo//2)) * 1e-2
-            u0 = self.extract_rotation(dr)
-        return u0
-
-    kernel = boys.kernel
 
 PM = Pipek = PipekMezey
 

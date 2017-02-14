@@ -3,7 +3,11 @@
 # Author: Qiming Sun <osirpt.sun@gmail.com>
 
 import os
-import imp
+import sys
+if sys.version_info < (2,7):
+    import imp
+else:
+    import importlib
 from pyscf.gto.basis import parse_nwchem
 
 ALIAS = {
@@ -43,11 +47,15 @@ ALIAS = {
     '431g'       : '4-31g.dat'      ,
     '631g'       : '6-31g.dat'      ,
     '631gs'      : '6-31gs.dat'     ,
+    '631gsp'     : '6-31gsp.dat'    ,
+    '631gps'     : '6-31gsp.dat'    ,
     '6311g'      : '6-311g.dat'     ,
     '6311gs'     : '6-311gs.dat'    ,
     '6311gsp'    : '6-311gsp.dat'   ,
     '6311gps'    : '6-311gsp.dat'   ,
     '631g*'      : '6-31gs.dat'     ,
+    '631g*+'     : '6-31gsp.dat'    ,
+    '631g+*'     : '6-31gsp.dat'    ,
     '6311g*'     : '6-311gs.dat'    ,
     '6311g*+'    : '6-311gsp.dat'   ,
     '6311g+*'    : '6-311gsp.dat'   ,
@@ -170,16 +178,21 @@ def load(filename_or_basisname, symb):
                 return parse_nwchem.parse(fin.read())
 
     name = filename_or_basisname.lower().replace(' ', '').replace('-', '').replace('_', '')
+    if name not in ALIAS:
+        return parse(filename_or_basisname)
     basmod = ALIAS[name]
     symb = ''.join([i for i in symb if i.isalpha()])
     if 'dat' in basmod:
         b = parse_nwchem.load(os.path.join(os.path.dirname(__file__), basmod), symb)
     else:
-        fp, pathname, description = imp.find_module(basmod, __path__)
-        mod = imp.load_module(name, fp, pathname, description)
-        #mod = __import__(basmod, globals={'__path__': __path__, '__name__': __name__})
-        b = mod.__getattribute__(symb)
-        fp.close()
+        if sys.version_info < (2,7):
+            fp, pathname, description = imp.find_module(basmod, __path__)
+            mod = imp.load_module(name, fp, pathname, description)
+            b = mod.__getattribute__(symb)
+            fp.close()
+        else:
+            mod = importlib.import_module('.'+basmod, __package__)
+            b = mod.__getattribute__(symb)
     return b
 
 def load_ecp(filename_or_basisname, symb):
@@ -195,6 +208,8 @@ def load_ecp(filename_or_basisname, symb):
                 return parse_nwchem.parse_ecp(fin.read())
 
     name = filename_or_basisname.lower().replace(' ', '').replace('-', '').replace('_', '')
+    if name not in ALIAS:
+        return parse_ecp(filename_or_basisname)
     basmod = ALIAS[name]
     symb = ''.join([i for i in symb if i.isalpha()])
     return parse_nwchem.load_ecp(os.path.join(os.path.dirname(__file__), basmod), symb)

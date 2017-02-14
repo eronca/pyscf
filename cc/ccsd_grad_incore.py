@@ -8,7 +8,7 @@ import ctypes
 import tempfile
 import numpy
 import h5py
-import pyscf.lib as lib
+from pyscf import lib
 from pyscf.lib import logger
 from pyscf import gto
 from pyscf import ao2mo
@@ -135,8 +135,8 @@ def IX_intermediates(mycc, t1, t2, l1, l2, eris=None, d1=None, d2=None):
                     c_ovvv[i].reshape(nvir,-1).T, 1, Ivv, 1)
 
         eris_ovvv = bufe_ovvv[:p1-p0]
-        _ccsd.unpack_tril(eris_ovx.reshape(-1,nvir_pair),
-                          out=eris_ovvv.reshape(-1,nvir**2))
+        lib.unpack_tril(eris_ovx.reshape(-1,nvir_pair),
+                        out=eris_ovvv.reshape(-1,nvir**2))
         eris_ovx = None
         #:Xvo += numpy.einsum('icjb,acjb->ai', d_ovov, eris_vvov)
         d_ovvo = _cp(d_ovov[p0:p1].transpose(0,1,3,2))
@@ -167,8 +167,8 @@ def IX_intermediates(mycc, t1, t2, l1, l2, eris=None, d1=None, d2=None):
         d_vvvv = _cp(dvvvv[off0:off1]) * 4
         for i in range(p0, p1):
             d_vvvv[i*(i+1)//2+i-off0] *= .5
-        d_vvvv = _ccsd.unpack_tril(d_vvvv, out=bufd_vvvv[:off1-off0])
-        eris_vvvv = _ccsd.unpack_tril(eris.vvvv[off0:off1], out=bufe_vvvv[:off1-off0])
+        d_vvvv = lib.unpack_tril(d_vvvv, out=bufd_vvvv[:off1-off0])
+        eris_vvvv = lib.unpack_tril(eris.vvvv[off0:off1], out=bufe_vvvv[:off1-off0])
         #:Ivv += numpy.einsum('decb,deca->ab', d_vvvv, eris_vvvv) * 2
         #:Xvo += numpy.einsum('icdb,acdb->ai', d_ovvv, eris_vvvv)
         lib.dot(eris_vvvv.reshape(-1,nvir).T, d_vvvv.reshape(-1,nvir), 2, Ivv, 1)
@@ -323,9 +323,9 @@ def kernel(mycc, t1=None, t2=None, l1=None, l2=None, eris=None, atmlst=None,
         de[k] -= numpy.einsum('xij,ij->x', s1[:,p0:p1], vhf4sij[p0:p1]) * 2
 
 # 2e AO integrals dot 2pdm
-        eri1 = gto.moleintor.getints('cint2e_ip1_sph', mol._atm, mol._bas,
-                                     mol._env, numpy.arange(shl0,shl1), comp=3,
-                                     aosym='s2kl').reshape(3,p1-p0,nao,-1)
+        eri1 = mol.intor('cint2e_ip1_sph', comp=3, aosym='s2kl',
+                         shls_slice=(shl0,shl1,0,mol.nbas,0,mol.nbas,0,mol.nbas))
+        eri1 = eri1.reshape(3,p1-p0,nao,-1)
         dm2buf = _load_block_tril(dm2ao, p0, p1)
         de[k] -= numpy.einsum('xijk,ijk->x', eri1, dm2buf) * 2
 
@@ -352,7 +352,7 @@ def _rdm2_mo2ao(mycc, d2, dm1, mo_coeff):
     nao_pair = nao * (nao+1) // 2
     nvir_pair = nvir * (nvir+1) //2
     mo_coeff = numpy.asarray(mo_coeff, order='F')
-    def _trans(vin, i0, icount, j0, jcount, out=None):
+    def _trans(vin, orbs_slice, out=None):
         nrow = vin.shape[0]
         fdrv = getattr(_ccsd.libcc, 'AO2MOnr_e2_drv')
         pao_loc = ctypes.POINTER(ctypes.c_void_p)()
@@ -361,9 +361,7 @@ def _rdm2_mo2ao(mycc, d2, dm1, mo_coeff):
              vin.ctypes.data_as(ctypes.c_void_p),
              mo_coeff.ctypes.data_as(ctypes.c_void_p),
              ctypes.c_int(nrow), ctypes.c_int(nao),
-             ctypes.c_int(i0), ctypes.c_int(icount),
-             ctypes.c_int(j0), ctypes.c_int(jcount),
-             pao_loc, ctypes.c_int(0))
+             (ctypes.c_int*4)(*orbs_slice), pao_loc, ctypes.c_int(0))
         return out
 
     blksize = 4
@@ -383,12 +381,12 @@ def _rdm2_mo2ao(mycc, d2, dm1, mo_coeff):
         for i in range(p1-p0):
             buf1[i,p0+i,:,:] += dm1
             buf1[i,:,:,p0+i] -= dm1 * .5
-        _trans(buf1.reshape(-1,nmo**2), 0, nmo, 0, nmo, bufop[p0*nmo:p1*nmo])
+        _trans(buf1.reshape(-1,nmo**2), (0,nmo,0,nmo), bufop[p0*nmo:p1*nmo])
 
     pool = pool.ravel()[:blksize*nvir**3].reshape((blksize*nvir,nvir,nvir))
     for p0, p1 in prange(0, nvir_pair, blksize*nvir):
-        buf1 = _ccsd.unpack_tril(_cp(dvvvv[p0:p1]), out=pool[:p1-p0])
-        _trans(buf1, nocc, nvir, nocc, nvir, bufvv[p0:p1])
+        buf1 = lib.unpack_tril(_cp(dvvvv[p0:p1]), out=pool[:p1-p0])
+        _trans(buf1, (nocc,nmo,nocc,nmo), bufvv[p0:p1])
     pool = buf1 = None
 
     # trans ij of d_ijkl
@@ -405,8 +403,8 @@ def _rdm2_mo2ao(mycc, d2, dm1, mo_coeff):
         tmp  = tmpbuf2[:i1-i0]
         for j0, j1 in prange(0, nvir_pair, BLKSIZE):
             tmp[:,j0:j1] = bufvv[j0:j1,i0:i1].T
-        buf1[:,nocc:,nocc:] = _ccsd.unpack_tril(tmp, out=tmpbuf3[:i1-i0])
-        _trans(buf1, 0, nmo, 0, nmo, bufaa[i0:i1])
+        buf1[:,nocc:,nocc:] = lib.unpack_tril(tmp, out=tmpbuf3[:i1-i0])
+        _trans(buf1, (0,nmo,0,nmo), bufaa[i0:i1])
 # dm2 + dm2.transpose(2,3,0,1)
         for j0, j1, in prange(0, i0, BLKSIZE):
             bufaa[i0:i1,j0:j1] += bufaa[j0:j1,i0:i1].T
@@ -534,7 +532,7 @@ if __name__ == '__main__':
     mycc.conv_tol = 1e-10
     mycc.conv_tol_normt = 1e-10
     ecc, t1, t2 = mycc.kernel()
-    l1, l2 = mycc.solve_lambda()[1:]
+    l1, l2 = mycc.solve_lambda()
     g1 = kernel(mycc, t1, t2, l1, l2, mf_grad=grad.RHF(mf))
     print('gcc')
     print(g1 + grad.grad_nuc(mol))
@@ -556,7 +554,7 @@ if __name__ == '__main__':
     mycc.conv_tol = 1e-10
     mycc.conv_tol_normt = 1e-10
     ecc, t1, t2 = mycc.kernel()
-    l1, l2 = mycc.solve_lambda()[1:]
+    l1, l2 = mycc.solve_lambda()
     g1 = kernel(mycc, t1, t2, l1, l2, mf_grad=grad.RHF(mf))
     print('gcc')
     print(g1 + grad.grad_nuc(mol))

@@ -14,41 +14,36 @@ from pyscf import lib
 from pyscf import gto
 from pyscf.gto.moleintor import libcgto
 
+# TODO: in C code, store complex data in two vectors for real and imag part
+
 #
 # \int mu*nu*exp(-ik*r) dr
 #
-# Note for nonuniform_orth grids, invh is reloaded as the base grids for x,y,z axes
-#
-def ft_aopair(mol, Gv, shls_slice=None, aosym='s1',
-              invh=None, gxyz=None, gs=None, buf=None, verbose=None):
+# gxyz is the index for Gvbase
+def ft_aopair(mol, Gv, shls_slice=None, aosym='s1', b=numpy.eye(3),
+              gxyz=None, Gvbase=None, buf=None, verbose=None):
     ''' FT transform AO pair
     \int i(r) j(r) exp(-ikr) dr^3
     '''
     if shls_slice is None:
         shls_slice = (0, mol.nbas, 0, mol.nbas)
     nGv = Gv.shape[0]
-    if gxyz is None or invh is None or gs is None:
+    if (gxyz is None or b is None or Gvbase is None
+# backward compatibility for pyscf-1.2, in which the argument Gvbase is gs
+        or (Gvbase is not None and isinstance(Gvbase[0], (int, numpy.integer)))):
         GvT = numpy.asarray(Gv.T, order='C')
         p_gxyzT = lib.c_null_ptr()
         p_gs = (ctypes.c_int*3)(0,0,0)
-        p_invh = (ctypes.c_double*1)(0)
+        p_b = (ctypes.c_double*1)(0)
         eval_gz = 'GTO_Gv_general'
     else:
         GvT = numpy.asarray(Gv.T, order='C')
         gxyzT = numpy.asarray(gxyz.T, order='C', dtype=numpy.int32)
         p_gxyzT = gxyzT.ctypes.data_as(ctypes.c_void_p)
-        p_gs = (ctypes.c_int*3)(*gs)
-# Guess what type of eval_gz to use
-        if isinstance(invh, numpy.ndarray) and invh.shape == (3,3):
-            p_invh = invh.ctypes.data_as(ctypes.c_void_p)
-            if numpy.allclose(invh-numpy.diag(invh.diagonal()), 0):
-                eval_gz = 'GTO_Gv_uniform_orth'
-            else:
-                eval_gz = 'GTO_Gv_uniform_nonorth'
-        else:
-            invh = numpy.hstack(invh)
-            p_invh = invh.ctypes.data_as(ctypes.c_void_p)
-            eval_gz = 'GTO_Gv_nonuniform_orth'
+        b = numpy.hstack((b.ravel(), numpy.zeros(3)) + Gvbase)
+        p_b = b.ctypes.data_as(ctypes.c_void_p)
+        p_gs = (ctypes.c_int*3)(*[len(x) for x in Gvbase])
+        eval_gz = 'GTO_Gv_cubic'
 
     fn = libcgto.GTO_ft_ovlp_mat
     intor = getattr(libcgto, 'GTO_ft_ovlp_sph')
@@ -75,7 +70,7 @@ def ft_aopair(mol, Gv, shls_slice=None, aosym='s1',
        (ctypes.c_int*4)(*shls_slice),
        ao_loc.ctypes.data_as(ctypes.c_void_p), ctypes.c_double(0),
        GvT.ctypes.data_as(ctypes.c_void_p),
-       p_invh, p_gxyzT, p_gs, ctypes.c_int(nGv),
+       p_b, p_gxyzT, p_gs, ctypes.c_int(nGv),
        mol._atm.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.natm),
        mol._bas.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(mol.nbas),
        mol._env.ctypes.data_as(ctypes.c_void_p))
@@ -83,35 +78,30 @@ def ft_aopair(mol, Gv, shls_slice=None, aosym='s1',
     return mat
 
 
-def ft_ao(mol, Gv, shls_slice=None,
-          invh=None, gxyz=None, gs=None, verbose=None):
+# gxyz is the index for Gvbase
+def ft_ao(mol, Gv, shls_slice=None, b=numpy.eye(3),
+          gxyz=None, Gvbase=None, verbose=None):
     ''' FT transform AO
     '''
     if shls_slice is None:
         shls_slice = (0, mol.nbas)
     nGv = Gv.shape[0]
-    if gxyz is None or invh is None or gs is None:
+    if (gxyz is None or b is None or Gvbase is None
+# backward compatibility for pyscf-1.2, in which the argument Gvbase is gs
+        or (Gvbase is not None and isinstance(Gvbase[0], (int, numpy.integer)))):
         GvT = numpy.asarray(Gv.T, order='C')
         p_gxyzT = lib.c_null_ptr()
         p_gs = (ctypes.c_int*3)(0,0,0)
-        p_invh = (ctypes.c_double*1)(0)
+        p_b = (ctypes.c_double*1)(0)
         eval_gz = 'GTO_Gv_general'
     else:
         GvT = numpy.asarray(Gv.T, order='C')
         gxyzT = numpy.asarray(gxyz.T, order='C', dtype=numpy.int32)
         p_gxyzT = gxyzT.ctypes.data_as(ctypes.c_void_p)
-        p_gs = (ctypes.c_int*3)(*gs)
-# Guess what type of eval_gz to use
-        if isinstance(invh, numpy.ndarray) and invh.shape == (3,3):
-            p_invh = invh.ctypes.data_as(ctypes.c_void_p)
-            if numpy.allclose(invh-numpy.diag(invh.diagonal()), 0):
-                eval_gz = 'GTO_Gv_uniform_orth'
-            else:
-                eval_gz = 'GTO_Gv_uniform_nonorth'
-        else:
-            invh = numpy.hstack(invh)
-            p_invh = invh.ctypes.data_as(ctypes.c_void_p)
-            eval_gz = 'GTO_Gv_nonuniform_orth'
+        eval_gz = 'GTO_Gv_cubic'
+        b = numpy.hstack((b.ravel(), numpy.zeros(3)) + Gvbase)
+        p_b = b.ctypes.data_as(ctypes.c_void_p)
+        p_gs = (ctypes.c_int*3)(*[len(x) for x in Gvbase])
 
     fn = libcgto.GTO_ft_ovlp_mat
     intor = getattr(libcgto, 'GTO_ft_ovlp_sph')
@@ -121,7 +111,7 @@ def ft_ao(mol, Gv, shls_slice=None,
     ghost_atm = numpy.array([[0,0,0,0,0,0]], dtype=numpy.int32)
     ghost_bas = numpy.array([[0,0,1,1,0,0,3,0]], dtype=numpy.int32)
     ghost_env = numpy.zeros(4)
-    ghost_env[3] = numpy.sqrt(4*numpy.pi)  # s function spheric norm
+    ghost_env[3] = numpy.sqrt(4*numpy.pi)  # s function spherical norm
     atm, bas, env = gto.conc_env(mol._atm, mol._bas, mol._env,
                                  ghost_atm, ghost_bas, ghost_env)
     ao_loc = mol.ao_loc_nr()
@@ -136,7 +126,7 @@ def ft_ao(mol, Gv, shls_slice=None,
        ao_loc.ctypes.data_as(ctypes.c_void_p),
        ctypes.c_double(0),
        GvT.ctypes.data_as(ctypes.c_void_p),
-       p_invh, p_gxyzT, p_gs, ctypes.c_int(nGv),
+       p_b, p_gxyzT, p_gs, ctypes.c_int(nGv),
        atm.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(len(atm)),
        bas.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(len(bas)),
        env.ctypes.data_as(ctypes.c_void_p))
@@ -158,18 +148,18 @@ if __name__ == '__main__':
 
     L = 5.
     n = 20
-    h = numpy.diag([L,L,L])
-    invh = scipy.linalg.inv(h)
+    a = numpy.diag([L,L,L])
+    b = scipy.linalg.inv(a)
     gs = [n,n,n]
     gxrange = range(gs[0]+1)+range(-gs[0],0)
     gyrange = range(gs[1]+1)+range(-gs[1],0)
     gzrange = range(gs[2]+1)+range(-gs[2],0)
     gxyz = lib.cartesian_prod((gxrange, gyrange, gzrange))
-    Gv = 2*numpy.pi * numpy.dot(gxyz, invh)
+    Gv = 2*numpy.pi * numpy.dot(gxyz, b)
 
     import time
-    print time.clock()
-    print(numpy.linalg.norm(ft_aopair(mol, Gv, None, 's1', invh, gxyz, gs)) - 63.0239113778)
-    print time.clock()
-    print(numpy.linalg.norm(ft_ao(mol, Gv, None, invh, gxyz, gs))-56.8273147065)
-    print time.clock()
+    print(time.clock())
+    print(numpy.linalg.norm(ft_aopair(mol, Gv, None, 's1', b, gxyz, gs)) - 63.0239113778)
+    print(time.clock())
+    print(numpy.linalg.norm(ft_ao(mol, Gv, None, b, gxyz, gs))-56.8273147065)
+    print(time.clock())

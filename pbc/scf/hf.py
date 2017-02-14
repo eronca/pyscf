@@ -16,13 +16,13 @@ import sys
 import time
 import numpy as np
 import h5py
-import pyscf.gto
-import pyscf.scf.hf
+from pyscf.scf import hf
 from pyscf import lib
 from pyscf.lib import logger
 from pyscf.scf.hf import make_rdm1
 from pyscf.pbc import tools
 from pyscf.pbc.gto import ewald
+from pyscf.pbc.gto import ecp
 from pyscf.pbc.gto.pseudo import get_pp
 from pyscf.pbc.scf import chkfile
 from pyscf.pbc.scf import addons
@@ -42,6 +42,8 @@ def get_hcore(cell, kpt=np.zeros(3)):
         hcore += get_pp(cell, kpt)
     else:
         hcore += get_nuc(cell, kpt)
+    if len(cell._ecpbas) > 0:
+        hcore += ecp.ecp_int(cell, kpt)
 
     return hcore
 
@@ -58,7 +60,7 @@ def get_nuc(cell, kpt=np.zeros(3)):
     See Martin (12.16)-(12.21).
     '''
     from pyscf.pbc import df
-    return df.DF(cell).get_nuc(kpt)
+    return df.FFTDF(cell).get_nuc(kpt)
 
 
 def get_j(cell, dm, hermi=1, vhfopt=None, kpt=np.zeros(3), kpt_band=None):
@@ -88,7 +90,7 @@ def get_j(cell, dm, hermi=1, vhfopt=None, kpt=np.zeros(3), kpt_band=None):
         density matrix (both order and shape).
     '''
     from pyscf.pbc import df
-    return df.DF(cell).get_jk(dm, hermi, kpt, kpt_band, with_k=False)[0]
+    return df.FFTDF(cell).get_jk(dm, hermi, kpt, kpt_band, with_k=False)[0]
 
 
 def get_jk(mf, cell, dm, hermi=1, vhfopt=None, kpt=np.zeros(3), kpt_band=None):
@@ -118,8 +120,7 @@ def get_jk(mf, cell, dm, hermi=1, vhfopt=None, kpt=np.zeros(3), kpt_band=None):
         density matrix (both order and shape).
     '''
     from pyscf.pbc import df
-    return df.DF(cell).get_jk(dm, hermi, kpt, kpt_band, with_j=False,
-                              exxdiv=mf.exxdiv)[1]
+    return df.FFTDF(cell).get_jk(dm, hermi, kpt, kpt_band, exxdiv=mf.exxdiv)
 
 
 def get_bands(mf, kpt_band, cell=None, dm=None, kpt=None):
@@ -224,16 +225,26 @@ def dot_eri_dm(eri, dm, hermi=0):
             vj = lib.asarray([v[0] for v in vjk]).reshape(dm.shape)
             vk = lib.asarray([v[1] for v in vjk]).reshape(dm.shape)
     else:
-        vj, vk = pyscf.scf.hf.dot_eri_dm(eri, dm, hermi)
+        vj, vk = hf.dot_eri_dm(eri, dm, hermi)
     return vj, vk
 
 
-class RHF(pyscf.scf.hf.RHF):
+class RHF(hf.RHF):
     '''RHF class adapted for PBCs.
 
     Attributes:
         kpt : (3,) ndarray
             The AO k-point in Cartesian coordinates, in units of 1/Bohr.
+
+        exxdiv : str
+            Exchange divergence treatment, can be one of
+
+            | None : ignore G=0 contribution in exchange integral
+            | 'ewald' : Ewald summation for G=0 in exchange integral
+
+        with_df : density fitting object
+            Default is the FFT based DF model. For all-electron calculation,
+            MDF model is favored for better accuracy.  See also :mod:`pyscf.pbc.df`.
     '''
     def __init__(self, cell, kpt=np.zeros(3), exxdiv='ewald'):
         from pyscf.pbc import df
@@ -241,9 +252,9 @@ class RHF(pyscf.scf.hf.RHF):
             sys.stderr.write('Warning: cell.build() is not called in input\n')
             cell.build()
         self.cell = cell
-        pyscf.scf.hf.RHF.__init__(self, cell)
+        hf.RHF.__init__(self, cell)
 
-        self.with_df = df.DF(cell)
+        self.with_df = df.FFTDF(cell)
         self.exxdiv = exxdiv
         self.kpt = kpt
         self.direct_scf = False
@@ -258,7 +269,7 @@ class RHF(pyscf.scf.hf.RHF):
         self.with_df.kpts = np.reshape(x, (-1,3))
 
     def dump_flags(self):
-        pyscf.scf.hf.RHF.dump_flags(self)
+        hf.RHF.dump_flags(self)
         logger.info(self, '******** PBC SCF flags ********')
         logger.info(self, 'kpt = %s', self.kpt)
         logger.info(self, 'DF object = %s', self.with_df)
@@ -267,10 +278,12 @@ class RHF(pyscf.scf.hf.RHF):
     def get_hcore(self, cell=None, kpt=None):
         if cell is None: cell = self.cell
         if kpt is None: kpt = self.kpt
-        if cell.pseudo is None:
-            nuc = self.with_df.get_nuc(kpt)
-        else:
+        if cell.pseudo:
             nuc = self.with_df.get_pp(kpt)
+        else:
+            nuc = self.with_df.get_nuc(kpt)
+        if len(cell._ecpbas) > 0:
+            nuc += ecp.ecp_int(cell, kpt)
         return nuc + cell.pbc_intor('cint1e_kin_sph', 1, 1, kpt)
 
     def get_ovlp(self, cell=None, kpt=None):
@@ -298,8 +311,9 @@ class RHF(pyscf.scf.hf.RHF):
             vj, vk = dot_eri_dm(self._eri, dm, hermi)
 
             if self.exxdiv == 'ewald':
+                from pyscf.pbc.df.df_jk import _ewald_exxdiv_for_G0
                 # G=0 is not inculded in the ._eri integrals
-                vk = _ewald_exxdiv_for_G0(self, dm, kpt, vk)
+                _ewald_exxdiv_for_G0(self.cell, kpt, [dm], [vk])
         else:
             vj, vk = self.with_df.get_jk(dm, hermi, kpt, kpt_band,
                                          exxdiv=self.exxdiv)
@@ -373,7 +387,7 @@ class RHF(pyscf.scf.hf.RHF):
         return self.init_guess_by_chkfile(chk, project, kpt)
 
     def dump_chk(self, envs):
-        pyscf.scf.hf.RHF.dump_chk(self, envs)
+        hf.RHF.dump_chk(self, envs)
         if self.chkfile:
             with h5py.File(self.chkfile) as fh5:
                 fh5['scf/kpt'] = self.kpt
@@ -386,29 +400,4 @@ class RHF(pyscf.scf.hf.RHF):
         else:
             mem_need = nao**4*16/1e6
         return mem_need + lib.current_memory()[0] < self.max_memory*.95
-
-
-def _ewald_exxdiv_for_G0(mf, dm, kpt, vk):
-    cell = mf.cell
-    gs = (0,0,0)
-    Gv = np.zeros((1,3))
-    ovlp = mf.get_ovlp(cell, kpt)
-    coulGk = tools.get_coulG(cell, kpt-kpt, True, mf, gs, Gv)[0]
-    logger.debug(mf, 'Total energy shift = -1/2 * Nelec*madelung/cell.vol = %.12g',
-                 coulGk/cell.vol*cell.nelectron * -.5)
-    if isinstance(dm, np.ndarray) and dm.ndim == 2:
-        vk += coulGk/cell.vol * reduce(np.dot, (ovlp, dm, ovlp))
-        nelec = np.einsum('ij,ij', ovlp, dm)
-    else:
-        nelec = 0
-        for k, dmi in enumerate(dm):
-            vk[k] += coulGk/cell.vol * reduce(np.dot, (ovlp, dmi, ovlp))
-            nelec += np.einsum('ij,ij', ovlp, dmi)
-    #if abs(nelec - cell.nelectron) > .1 and abs(nelec) > .1:
-    #    logger.debug(mf, 'Tr(dm,S) = %g', nelec)
-    #    sys.stderr.write('Warning: The input dm is not SCF density matrix. '
-    #                     'The Ewald treatment on G=0 term for K matrix '
-    #                     'might not be well defined.  Set mf.exxdiv=None '
-    #                     'to switch off the Ewald term.\n')
-    return vk
 

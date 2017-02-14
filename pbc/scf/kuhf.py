@@ -12,6 +12,7 @@ See Also:
 
 import time
 import numpy as np
+import scipy.linalg
 import h5py
 from pyscf.scf import hf
 from pyscf.scf import uhf
@@ -70,7 +71,6 @@ def get_occ(mf, mo_energy_kpts=None, mo_coeff_kpts=None):
     nkpts = len(mo_energy_kpts[0])
     nocc = mf.cell.nelectron * nkpts
 
-    # TODO: implement Fermi smearing and print mo_energy kpt by kpt
     mo_energy = np.sort(mo_energy_kpts.ravel())
     fermi = mo_energy[nocc-1]
     mo_occ_kpts[mo_energy_kpts <= fermi] = 1
@@ -87,15 +87,15 @@ def get_occ(mf, mo_energy_kpts=None, mo_coeff_kpts=None):
     if mf.verbose >= logger.DEBUG:
         np.set_printoptions(threshold=len(mo_energy))
         logger.debug(mf, '     k-point                  alpha mo_energy')
-        for k,kpt in enumerate(mf.kpts):
-            kstr = '(%6.3f %6.3f %6.3f)' % tuple(mf.cell.get_scaled_kpts(kpt))
-            logger.debug(mf, '  %2d %s   %s %s', k, kstr,
+        for k,kpt in enumerate(mf.cell.get_scaled_kpts(mf.kpts)):
+            logger.debug(mf, '  %2d (%6.3f %6.3f %6.3f)   %s %s',
+                         k, kpt[0], kpt[1], kpt[2],
                          mo_energy_kpts[0,k,mo_occ_kpts[0,k]> 0],
                          mo_energy_kpts[0,k,mo_occ_kpts[0,k]==0])
         logger.debug(mf, '     k-point                  beta  mo_energy')
-        for k,kpt in enumerate(mf.kpts):
-            kstr = '(%6.3f %6.3f %6.3f)' % tuple(mf.cell.get_scaled_kpts(kpt))
-            logger.debug(mf, '  %2d %s   %s %s', k, kstr,
+        for k,kpt in enumerate(mf.cell.get_scaled_kpts(mf.kpts)):
+            logger.debug(mf, '  %2d (%6.3f %6.3f %6.3f)   %s %s',
+                         k, kpt[0], kpt[1], kpt[2],
                          mo_energy_kpts[1,k,mo_occ_kpts[1,k]> 0],
                          mo_energy_kpts[1,k,mo_occ_kpts[1,k]==0])
         np.set_printoptions()
@@ -123,6 +123,38 @@ def energy_elec(mf, dm_kpts=None, h1e_kpts=None, vhf_kpts=None):
     logger.debug(mf, 'E_coul = %.15g', e_coul)
     return e1+e_coul, e_coul
 
+def canonicalize(mf, mo_coeff_kpts, mo_occ_kpts, fock=None):
+    '''Canonicalization diagonalizes the UHF Fock matrix within occupied,
+    virtual subspaces separatedly (without change occupancy).
+    '''
+    mo_occ_kpts = np.asarray(mo_occ_kpts)
+    if fock is None:
+        dm = mf.make_rdm1(mo_coeff_kpts, mo_occ_kpts)
+        fock = mf.get_hcore() + mf.get_jk(mol, dm)
+    occidx = mo_occ_kpts == 2
+    viridx = ~occidx
+    mo_coeff_kpts = mo_coeff_kpts.copy()
+    mo_e = np.empty_like(mo_occ_kpts)
+
+    def eig_(fock, mo_coeff_kpts, idx, es, cs):
+        if np.count_nonzero(idx) > 0:
+            orb = mo_coeff_kpts[:,idx]
+            f1 = reduce(np.dot, (orb.T.conj(), fock, orb))
+            e, c = scipy.linalg.eigh(f1)
+            es[idx] = e
+            cs[:,idx] = np.dot(orb, c)
+
+    for k, mo in enumerate(mo_coeff_kpts[0]):
+        occidxa = mo_occ_kpts[0][k] == 1
+        viridxa = ~occidxa
+        eig_(fock[0][k], mo, occidxa, mo_e[0,k], mo)
+        eig_(fock[0][k], mo, viridxa, mo_e[0,k], mo)
+    for k, mo in enumerate(mo_coeff_kpts[1]):
+        occidxb = mo_occ_kpts[1][k] == 1
+        viridxb = ~occidxb
+        eig_(fock[1][k], mo, occidxb, mo_e[1,k], mo)
+        eig_(fock[1][k], mo, viridxb, mo_e[1,k], mo)
+    return mo_e, mo
 
 def init_guess_by_chkfile(cell, chkfile_name, project=True, kpts=None):
     '''Read the KHF results from checkpoint file, then project it to the
@@ -194,7 +226,7 @@ class KUHF(uhf.UHF, khf.KRHF):
         self.cell = cell
         uhf.UHF.__init__(self, cell)
 
-        self.with_df = df.DF(cell)
+        self.with_df = df.FFTDF(cell)
         self.exxdiv = exxdiv
         self.kpts = kpts
         self.direct_scf = False
@@ -262,8 +294,7 @@ class KUHF(uhf.UHF, khf.KRHF):
             fock = self.get_hcore(self.cell, self.kpts) + self.get_veff(self.cell, dm1)
 
         nkpts = len(self.kpts)
-        grad_kpts = [uhf.get_grad(mo_coeff_kpts[:,k],
-                                            mo_occ_kpts[:,k], fock[:,k])
+        grad_kpts = [uhf.get_grad(mo_coeff_kpts[:,k], mo_occ_kpts[:,k], fock[:,k])
                      for k in range(nkpts)]
         return np.hstack(grad_kpts)
 
@@ -309,4 +340,6 @@ class KUHF(uhf.UHF, khf.KRHF):
             with h5py.File(self.chkfile) as fh5:
                 fh5['scf/kpts'] = self.kpts
         return self
+
+    canonicalize = canonicalize
 

@@ -22,8 +22,7 @@ for r in numpy.arange(2.4, 5.1, .2):
         basis = '6-31g',
         verbose = 0,
     )
-    myhf = scf.RHF(mol)
-    myhf.kernel()
+    myhf = scf.RHF(mol).run()
     c = myhf.mo_coeff
 
     h1e = reduce(numpy.dot, (c.T, myhf.get_hcore(), c))
@@ -36,4 +35,4 @@ for r in numpy.arange(2.4, 5.1, .2):
     myci = fci.FCI(mol, c)
     e, civec = myci.kernel()
 
-    print('r = %f, E = %g, S^2 = %g, 2S+1 = %g' % (r, e+mol.energy_nuc(), s2, m))
+    print('r = %f, E = %g, S^2 = %g, 2S+1 = %g' % (r, e, s2, m))

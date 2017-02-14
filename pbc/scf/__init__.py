@@ -2,9 +2,7 @@
 # -*- coding: utf-8
 # Author: Qiming Sun <osirpt.sun@gmail.com>
 
-'''Non-relativistic and relativistic Hartree-Fock
-   for periodic systems at a *single* k-point.
-
+'''Hartree-Fock for periodic systems
 '''
 
 from pyscf.pbc.scf import hf
@@ -13,9 +11,14 @@ from pyscf.pbc.scf import uhf
 from pyscf.pbc.scf import khf
 from pyscf.pbc.scf import khf as krhf
 from pyscf.pbc.scf import kuhf
+from pyscf.pbc.scf import newton_ah
+from pyscf.pbc.scf import addons
+from pyscf.pbc.scf.x2c import sfx2c1e, sfx2c
 
 RHF = rhf.RHF
 UHF = uhf.UHF
 
 KRHF = krhf.KRHF
 KUHF = kuhf.KUHF
+
+newton = newton_ah.newton

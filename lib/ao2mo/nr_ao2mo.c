@@ -331,6 +331,112 @@ int AO2MOmmm_nr_s2_igtj(double *vout, double *eri, double *buf,
         return 0;
 }
 
+/*
+ * transform bra, s1 to label AO symmetry
+ */
+int AO2MOmmm_bra_nr_s1(double *vout, double *vin, double *buf,
+                       struct _AO2MOEnvs *envs, int seekdim)
+{
+        switch (seekdim) {
+                case 1: return envs->bra_count * envs->nao;
+                case 2: return envs->nao * envs->nao;
+        }
+        const double D0 = 0;
+        const double D1 = 1;
+        const char TRANS_N = 'N';
+        int nao = envs->nao;
+        int i_start = envs->bra_start;
+        int i_count = envs->bra_count;
+        double *mo_coeff = envs->mo_coeff;
+
+        dgemm_(&TRANS_N, &TRANS_N, &nao, &i_count, &nao,
+               &D1, vin, &nao, mo_coeff+i_start*nao, &nao,
+               &D0, vout, &nao);
+        return 0;
+}
+
+/*
+ * transform ket, s1 to label AO symmetry
+ */
+int AO2MOmmm_ket_nr_s1(double *vout, double *vin, double *buf,
+                       struct _AO2MOEnvs *envs, int seekdim)
+{
+        switch (seekdim) {
+                case OUTPUTIJ: return envs->nao * envs->ket_count;
+                case INPUT_IJ: return envs->nao * envs->nao;
+        }
+        const double D0 = 0;
+        const double D1 = 1;
+        const char TRANS_T = 'T';
+        const char TRANS_N = 'N';
+        int nao = envs->nao;
+        int j_start = envs->ket_start;
+        int j_count = envs->ket_count;
+        double *mo_coeff = envs->mo_coeff;
+
+        dgemm_(&TRANS_T, &TRANS_N, &j_count, &nao, &nao,
+               &D1, mo_coeff+j_start*nao, &nao, vin, &nao,
+               &D0, vout, &j_count);
+        return 0;
+}
+
+/*
+ * transform bra, s2 to label AO symmetry
+ */
+int AO2MOmmm_bra_nr_s2(double *vout, double *vin, double *buf,
+                       struct _AO2MOEnvs *envs, int seekdim)
+{
+        switch (seekdim) {
+                case OUTPUTIJ: return envs->bra_count * envs->nao;
+                case INPUT_IJ: return envs->nao * (envs->nao+1) / 2;
+        }
+        const double D0 = 0;
+        const double D1 = 1;
+        const char SIDE_L = 'L';
+        const char UPLO_U = 'U';
+        int nao = envs->nao;
+        int i_start = envs->bra_start;
+        int i_count = envs->bra_count;
+        double *mo_coeff = envs->mo_coeff;
+
+        dsymm_(&SIDE_L, &UPLO_U, &nao, &i_count,
+               &D1, vin, &nao, mo_coeff+i_start*nao, &nao,
+               &D0, vout, &nao);
+        return 0;
+}
+
+/*
+ * transform ket, s2 to label AO symmetry
+ */
+int AO2MOmmm_ket_nr_s2(double *vout, double *vin, double *buf,
+                       struct _AO2MOEnvs *envs, int seekdim)
+{
+        switch (seekdim) {
+                case OUTPUTIJ: return envs->nao * envs->ket_count;
+                case INPUT_IJ: return envs->nao * (envs->nao+1) / 2;
+        }
+        const double D0 = 0;
+        const double D1 = 1;
+        const char SIDE_L = 'L';
+        const char UPLO_U = 'U';
+        int nao = envs->nao;
+        int j_start = envs->ket_start;
+        int j_count = envs->ket_count;
+        double *mo_coeff = envs->mo_coeff;
+        int i, j;
+
+        dsymm_(&SIDE_L, &UPLO_U, &nao, &j_count,
+               &D1, vin, &nao, mo_coeff+j_start*nao, &nao,
+               &D0, buf, &nao);
+        for (j = 0; j < nao; j++) {
+                for (i = 0; i < j_count; i++) {
+                        vout[i] = buf[i*nao+j];
+                }
+                vout += j_count;
+        }
+        return 0;
+}
+
 
 /*
  * s1, s2ij, s2kl, s4 here to label the AO symmetry
@@ -1096,59 +1202,47 @@ void AO2MOtrans_nr_sorts2_s2(void *nop, int row_id,
  * C-order.  Transposing is needed before calling AO2MOnr_e2_drv.
  * eri[ncomp,nkl,mo_i,mo_j]
  */
-void AO2MOnr_e1_drv(int (*intor)(), int (*cgto_in_shell)(), void (*fill)(),
-                    void (*ftrans)(), int (*fmmm)(),
+void AO2MOnr_e1_drv(int (*intor)(), void (*fill)(), void (*ftrans)(), int (*fmmm)(),
                     double *eri, double *mo_coeff,
-                    int klsh_start, int klsh_count, int nkl,
-                    int i_start, int i_count, int j_start, int j_count,
-                    int ncomp, CINTOpt *cintopt, CVHFOpt *vhfopt,
+                    int klsh_start, int klsh_count, int nkl, int ncomp,
+                    int *orbs_slice, int *ao_loc,
+                    CINTOpt *cintopt, CVHFOpt *vhfopt,
                     int *atm, int natm, int *bas, int nbas, double *env)
 {
-        int *ao_loc = malloc(sizeof(int)*(nbas+1));
-        int ish;
-        int nao = 0;
-        for (ish = 0; ish < nbas; ish++) {
-                ao_loc[ish] = nao;
-                nao += (*cgto_in_shell)(ish, bas);
-        }
-        ao_loc[nbas] = nao;
+        int nao = ao_loc[nbas];
         double *eri_ao = malloc(sizeof(double) * nao*nao*nkl*ncomp);
         assert(eri_ao);
-        AO2MOnr_e1fill_drv(intor, cgto_in_shell, fill,
-                           eri_ao, klsh_start, klsh_count,
-                           nkl, ncomp, cintopt, vhfopt,
+        AO2MOnr_e1fill_drv(intor, fill, eri_ao, klsh_start, klsh_count,
+                           nkl, ncomp, ao_loc, cintopt, vhfopt,
                            atm, natm, bas, nbas, env);
         AO2MOnr_e2_drv(ftrans, fmmm, eri, eri_ao, mo_coeff,
-                       nkl*ncomp, nao, i_start, i_count, j_start, j_count,
-                       ao_loc, nbas);
+                       nkl*ncomp, nao, orbs_slice, ao_loc, nbas);
         free(eri_ao);
-        free(ao_loc);
 }
 
 void AO2MOnr_e2_drv(void (*ftrans)(), int (*fmmm)(),
                     double *vout, double *vin, double *mo_coeff,
-                    int nijcount, int nao,
-                    int i_start, int i_count, int j_start, int j_count,
-                    int *ao_loc, int nbas)
+                    int nij, int nao, int *orbs_slice, int *ao_loc, int nbas)
 {
         struct _AO2MOEnvs envs;
-        envs.bra_start = i_start;
-        envs.bra_count = i_count;
-        envs.ket_start = j_start;
-        envs.ket_count = j_count;
+        envs.bra_start = orbs_slice[0];
+        envs.bra_count = orbs_slice[1] - orbs_slice[0];
+        envs.ket_start = orbs_slice[2];
+        envs.ket_count = orbs_slice[3] - orbs_slice[2];
         envs.nao = nao;
         envs.nbas = nbas;
         envs.ao_loc = ao_loc;
         envs.mo_coeff = mo_coeff;
 
-        int i;
 #pragma omp parallel default(none) \
-        shared(ftrans, fmmm, vout, vin, nijcount, envs, nao, i_count, j_count) \
-        private(i)
+        shared(ftrans, fmmm, vout, vin, nij, envs, nao, orbs_slice)
 {
+        int i;
+        int i_count = envs.bra_count;
+        int j_count = envs.ket_count;
         double *buf = malloc(sizeof(double) * (nao+i_count) * (nao+j_count));
 #pragma omp for schedule(dynamic)
-        for (i = 0; i < nijcount; i++) {
+        for (i = 0; i < nij; i++) {
                 (*ftrans)(fmmm, i, vout, vin, buf, &envs);
         }
         free(buf);
@@ -1159,22 +1253,17 @@ void AO2MOnr_e2_drv(void (*ftrans)(), int (*fmmm)(),
  * The size of eri is ncomp*nkl*nao*nao, note the upper triangular part
  * may not be filled
  */
-void AO2MOnr_e1fill_drv(int (*intor)(), int (*cgto_in_shell)(), void (*fill)(),
-                        double *eri, int klsh_start, int klsh_count, int nkl,
-                        int ncomp, CINTOpt *cintopt, CVHFOpt *vhfopt,
+void AO2MOnr_e1fill_drv(int (*intor)(), void (*fill)(), double *eri,
+                        int klsh_start, int klsh_count, int nkl, int ncomp,
+                        int *ao_loc, CINTOpt *cintopt, CVHFOpt *vhfopt,
                         int *atm, int natm, int *bas, int nbas, double *env)
 {
-        int *ao_loc = malloc(sizeof(int)*(nbas+1));
-        int ish, di;
-        int nao = 0;
+        int i;
+        int nao = ao_loc[nbas];
         int dmax = 0;
-        for (ish = 0; ish < nbas; ish++) {
-                ao_loc[ish] = nao;
-                di = (*cgto_in_shell)(ish, bas);
-                dmax = MAX(dmax, di);
-                nao += di;
+        for (i= 0; i< nbas; i++) {
+                dmax = MAX(dmax, ao_loc[i+1]-ao_loc[i]);
         }
-        ao_loc[nbas] = nao;
         struct _AO2MOEnvs envs = {natm, nbas, atm, bas, env, nao,
                                   klsh_start, klsh_count, 0, 0, 0, 0,
                                   ncomp, ao_loc, NULL, cintopt, vhfopt};
@@ -1186,9 +1275,9 @@ void AO2MOnr_e1fill_drv(int (*intor)(), int (*cgto_in_shell)(), void (*fill)(),
         }
 
 #pragma omp parallel default(none) \
-        shared(fill, fprescreen, eri, envs, intor, nkl, nbas, dmax, ncomp) \
-        private(ish)
+        shared(fill, fprescreen, eri, envs, intor, nkl, nbas, dmax, ncomp)
 {
+        int ish;
         double *buf = malloc(sizeof(double)*dmax*dmax*dmax*dmax*ncomp);
 #pragma omp for schedule(dynamic, 1)
         for (ish = 0; ish < nbas; ish++) {
@@ -1196,6 +1285,5 @@ void AO2MOnr_e1fill_drv(int (*intor)(), int (*cgto_in_shell)(), void (*fill)(),
         }
         free(buf);
 }
-        free(ao_loc);
 }
 

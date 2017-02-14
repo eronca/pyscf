@@ -17,7 +17,7 @@ from pyscf.mcscf import mc_ao2mo
 from pyscf.mcscf import chkfile
 from pyscf import ao2mo
 from pyscf import scf
-from pyscf.scf import iah
+from pyscf.scf import ciah
 
 # ref. JCP, 82, 5053;  JCP, 73, 2342
 
@@ -259,9 +259,9 @@ def rotate_orb_cc(casscf, mo, fcasdm1, fcasdm2, eris, x0_guess=None,
         g_op = lambda: g_orb
 
         for ah_end, ihop, w, dxi, hdxi, residual, seig \
-                in iah.davidson_cc(h_op, g_op, precond, x0_guess,
-                                   tol=ah_conv_tol, max_cycle=casscf.ah_max_cycle,
-                                   lindep=casscf.ah_lindep, verbose=log):
+                in ciah.davidson_cc(h_op, g_op, precond, x0_guess,
+                                    tol=ah_conv_tol, max_cycle=casscf.ah_max_cycle,
+                                    lindep=casscf.ah_lindep, verbose=log):
             # residual = v[0] * (g+(h-e)x) ~ v[0] * grad
             norm_residual = numpy.linalg.norm(residual)
             if (ah_end or ihop == casscf.ah_max_cycle or # make sure to use the last step
@@ -354,20 +354,18 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
 
     mo = mo_coeff
     nmo = mo_coeff.shape[1]
-    ncas = casscf.ncas
-    ncore = casscf.ncore
-    nocc = ncore + ncas
     #TODO: lazy evaluate eris, to leave enough memory for FCI solver
     eris = casscf.ao2mo(mo)
     e_tot, e_ci, fcivec = casscf.casci(mo, ci0, eris, log, locals())
-    if ncas == nmo:
-        log.debug('CASSCF canonicalization')
-        mo, fcivec, mo_energy = casscf.canonicalize(mo, fcivec, eris, False,
-                                                    casscf.natorb, verbose=log)
-        return True, e_tot, e_ci, fcivec, mo, mo_energy
+    if casscf.ncas == nmo and not casscf.internal_rotation:
+        if casscf.canonicalization:
+            log.debug('CASSCF canonicalization')
+            mo, fcivec, mo_energy = casscf.canonicalize(mo, fcivec, eris, False,
+                                                        casscf.natorb, verbose=log)
+            return True, e_tot, e_ci, fcivec, mo, mo_energy
 
     if conv_tol_grad is None:
-        conv_tol_grad = numpy.sqrt(tol*.1)
+        conv_tol_grad = numpy.sqrt(tol)
         logger.info(casscf, 'Set conv_tol_grad to %g', conv_tol_grad)
     conv_tol_ddm = conv_tol_grad * 3
     conv = False
@@ -377,7 +375,7 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
     r0 = None
 
     t1m = log.timer('Initializing 1-step CASSCF', *cput0)
-    casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, ncas, casscf.nelecas)
+    casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, casscf.ncas, casscf.nelecas)
     norm_ddm = 1e2
     casdm1_prev = casdm1_last = casdm1
     t3m = t2m = log.timer('CAS DM', *t1m)
@@ -388,7 +386,7 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         max_stepsize = casscf.max_stepsize_scheduler(locals())
         imicro = 0
         rota = casscf.rotate_orb_cc(mo, lambda:casdm1, lambda:casdm2,
-                                    eris, r0, conv_tol_grad, max_stepsize, log)
+                                    eris, r0, conv_tol_grad*.3, max_stepsize, log)
         for u, g_orb, njk in rota:
             imicro += 1
             norm_gorb = numpy.linalg.norm(g_orb)
@@ -396,30 +394,37 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
                 norm_gorb0 = norm_gorb
             norm_t = numpy.linalg.norm(u-numpy.eye(nmo))
             t3m = log.timer('orbital rotation', *t3m)
-            if imicro == max_cycle_micro:
-                log.debug('micro %d  |u-1|=%5.3g  |g[o]|=%5.3g  ',
+            if norm_gci is None:
+                accepted_gorb = norm_gorb < norm_ddm*2
+            else:
+                accepted_gorb = norm_gorb < norm_gci*1.5
+            if (imicro >= max_cycle_micro and
+                (accepted_gorb or imicro > max_cycle_micro*2 or
+                 norm_gorb > norm_gorb0)):
+                log.debug('micro %d  |u-1|=%5.3g  |g[o]|=%5.3g',
                           imicro, norm_t, norm_gorb)
                 break
 
-            casdm1, casdm2, gci, fcivec = casscf.update_casdm(mo, u, fcivec, e_ci, eris)
-            if isinstance(gci, numpy.ndarray):
-                norm_gci = '%4.3g' % numpy.linalg.norm(gci)
-            else:
-                norm_gci = None
+            casdm1, casdm2, gci, fcivec = casscf.update_casdm(mo, u, fcivec, e_ci, eris, locals())
             norm_ddm = numpy.linalg.norm(casdm1 - casdm1_last)
             norm_ddm_micro = numpy.linalg.norm(casdm1 - casdm1_prev)
             casdm1_prev = casdm1
             t3m = log.timer('update CAS DM', *t3m)
-            log.debug('micro %d  |u-1|=%5.3g  |g[o]|=%5.3g  '
-                      '|g[c]|= %s  |ddm|=%5.3g',
-                      imicro, norm_t, norm_gorb, norm_gci, norm_ddm)
+            if isinstance(gci, numpy.ndarray):
+                norm_gci = numpy.linalg.norm(gci)
+                log.debug('micro %d  |u-1|=%5.3g  |g[o]|=%5.3g  |g[c]|=%5.3g  |ddm|=%5.3g',
+                          imicro, norm_t, norm_gorb, norm_gci, norm_ddm)
+            else:
+                norm_gci = None
+                log.debug('micro %d  |u-1|=%5.3g  |g[o]|=%5.3g  |g[c]|=%s  |ddm|=%5.3g',
+                          imicro, norm_t, norm_gorb, norm_gci, norm_ddm)
 
             if callable(callback):
                 callback(locals())
 
             t3m = log.timer('micro iter %d'%imicro, *t3m)
             if (norm_t < conv_tol_grad or
-                (norm_gorb < conv_tol_grad*.4 and
+                (norm_gorb < conv_tol_grad*.5 and
                  (norm_ddm < conv_tol_ddm*.4 or norm_ddm_micro < conv_tol_ddm*.4))):
                 break
 
@@ -429,15 +434,16 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         totmicro += imicro
         totinner += njk
 
+        eris = None
+        # keep u, g_orb in locals() so that they can be accessed by callback
+        u = u.copy()
+        g_orb = g_orb.copy()
         mo = casscf.rotate_mo(mo, u, log)
-        r0 = casscf.pack_uniq_var(u)
-
-        u = g_orb = eris = None
         eris = casscf.ao2mo(mo)
         t2m = log.timer('update eri', *t3m)
 
         e_tot, e_ci, fcivec = casscf.casci(mo, fcivec, eris, log, locals())
-        casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, ncas, casscf.nelecas)
+        casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, casscf.ncas, casscf.nelecas)
         norm_ddm = numpy.linalg.norm(casdm1 - casdm1_last)
         casdm1_prev = casdm1_last = casdm1
         log.timer('CASCI solver', *t2m)
@@ -454,6 +460,8 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         if callable(callback):
             callback(locals())
 
+        r0 = casscf.pack_uniq_var(u)
+
     if conv:
         log.info('1-step CASSCF converged in %d macro (%d JK %d micro) steps',
                  imacro+1, totinner, totmicro)
@@ -465,6 +473,9 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         log.info('CASSCF canonicalization')
         mo, fcivec, mo_energy = \
                 casscf.canonicalize(mo, fcivec, eris, False, casscf.natorb, casdm1, log)
+        if casscf.natorb: # dump_chk may save casdm1
+            occ, ucas = casscf._eig(-casdm1, ncore, nocc)[0]
+            casdm1 = -occ
 
     if dump_chk:
         casscf.dump_chk(locals())
@@ -747,11 +758,11 @@ class CASSCF(casci.CASCI):
                 if 'norm_gci' in envs:
                     log.info('               |grad[o]|=%5.3g  '
                              '|grad[c]|= %s  |ddm|=%5.3g',
-                             envs['norm_gorb'],
+                             envs['norm_gorb0'],
                              envs['norm_gci'], envs['norm_ddm'])
                 else:
                     log.info('               |grad[o]|=%5.3g  |ddm|=%5.3g',
-                             envs['norm_gorb'], envs['norm_ddm'])
+                             envs['norm_gorb0'], envs['norm_ddm'])
             else:  # Initialization step
                 if ss is None:
                     log.info('CASCI E = %.15g', e_tot)
@@ -841,7 +852,7 @@ class CASSCF(casci.CASCI):
 
 # hessian_co exactly expands up to first order of H
 # update_casdm exand to approx 2nd order of H
-    def update_casdm(self, mo, u, fcivec, e_ci, eris):
+    def update_casdm(self, mo, u, fcivec, e_ci, eris, envs={}):
         nmo = mo.shape[1]
         rmat = u - numpy.eye(nmo)
 
@@ -896,7 +907,7 @@ class CASSCF(casci.CASCI):
               + numpy.einsum('pq,pq->', eris.vhf_c, ddm))
         ### hessian_co part end ###
 
-        ci1, g = self.solve_approx_ci(h1, h2, fcivec, ecore, e_ci)
+        ci1, g = self.solve_approx_ci(h1, h2, fcivec, ecore, e_ci, envs)
         if g is not None:  # So state average CI, DMRG etc will not be applied
             ovlp = numpy.dot(fcivec.ravel(), ci1.ravel())
             norm_g = numpy.linalg.norm(g)
@@ -909,15 +920,20 @@ class CASSCF(casci.CASCI):
 
         return casdm1, casdm2, g, ci1
 
-    def solve_approx_ci(self, h1, h2, ci0, ecore, e_ci):
+    def solve_approx_ci(self, h1, h2, ci0, ecore, e_ci, envs):
         ''' Solve CI eigenvalue/response problem approximately
         '''
         ncas = self.ncas
         nelecas = self.nelecas
         ncore = self.ncore
         nocc = ncore + ncas
+        if 'norm_gorb' in envs:
+            tol = max(self.conv_tol, envs['norm_gorb']**2*.1)
+        else:
+            tol = None
         if hasattr(self.fcisolver, 'approx_kernel'):
-            ci1 = self.fcisolver.approx_kernel(h1, h2, ncas, nelecas, ci0=ci0)[1]
+            ci1 = self.fcisolver.approx_kernel(h1, h2, ncas, nelecas, ci0=ci0,
+                                               tol=tol, max_memory=self.max_memory)[1]
             return ci1, None
 
         h2eff = self.fcisolver.absorb_h1e(h1, h2, ncas, nelecas, .5)
@@ -927,7 +943,9 @@ class CASSCF(casci.CASCI):
         if self.ci_response_space > 7:
             logger.debug(self, 'CI step by full response')
             # full response
-            e, ci1 = self.fcisolver.kernel(h1, h2, ncas, nelecas, ci0=ci0)
+            max_memory = max(400, self.max_memory-lib.current_memory()[0])
+            e, ci1 = self.fcisolver.kernel(h1, h2, ncas, nelecas, ci0=ci0,
+                                           tol=tol, max_memory=max_memory)
         else:
             nd = min(max(self.ci_response_space, 2), ci0.size)
             logger.debug(self, 'CI step by %dD subspace response', nd)
@@ -981,20 +999,22 @@ class CASSCF(casci.CASCI):
             civec = None
         ncore = self.ncore
         nocc = self.ncore + self.ncas
-        occ, ucas = self._eig(-envs['casdm1'], ncore, nocc)
-        mo = envs['mo'].copy()
-        mo[:,ncore:nocc] = numpy.dot(mo[:,ncore:nocc], ucas)
-        mo_occ = numpy.zeros(mo.shape[1])
+        mo_occ = numpy.zeros(envs['mo'].shape[1])
         mo_occ[:ncore] = 2
-        mo_occ[ncore:nocc] = -occ
+        if self.natorb:
+            occ = self._eig(-envs['casdm1'], ncore, nocc)[0]
+            mo_occ[ncore:nocc] = -occ
+        else:
+            mo_occ[ncore:nocc] = envs['casdm1'].diagonal()
 # Note: mo_energy in active space =/= F_{ii}  (F is general Fock)
         if 'mo_energy' in envs:
             mo_energy = envs['mo_energy']
         else:
             mo_energy = 'None'
         chkfile.dump_mcscf(self, self.chkfile, 'mcscf', envs['e_tot'],
-                           mo, self.ncore, self.ncas, mo_occ, mo_energy,
-                           envs['e_ci'], civec, overwrite_mol=False)
+                           envs['mo'], self.ncore, self.ncas, mo_occ,
+                           mo_energy, envs['e_ci'], civec, envs['casdm1'],
+                           overwrite_mol=False)
         return self
 
     def update(self, chkfile=None):

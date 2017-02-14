@@ -7,7 +7,7 @@ from pyscf.lib import logger
 
 
 def kernel(cc, eris, t1=None, t2=None, max_cycle=50, tol=1e-8, tolnormt=1e-6,
-           max_memory=2000, verbose=logger.INFO):
+           verbose=logger.INFO):
     if verbose is None:
         verbose = cc.verbose
     if isinstance(verbose, logger.Logger):
@@ -166,8 +166,7 @@ def energy(cc, t1, t2, eris):
 
 
 class CCSD(lib.StreamObject):
-    def __init__(self, mf, frozen=[], mo_energy=None, mo_coeff=None, mo_occ=None):
-        if mo_energy is None: mo_energy = mf.mo_energy
+    def __init__(self, mf, frozen=[], mo_coeff=None, mo_occ=None):
         if mo_coeff  is None: mo_coeff  = mf.mo_coeff
         if mo_occ    is None: mo_occ    = mf.mo_occ
 
@@ -189,7 +188,6 @@ class CCSD(lib.StreamObject):
 
 ##################################################
 # don't modify the following attributes, they are not input options
-        self.mo_energy = mo_energy
         self.mo_coeff = mo_coeff
         self.mo_occ = mo_occ
         self._conv = False
@@ -201,17 +199,19 @@ class CCSD(lib.StreamObject):
         self.l1 = None
         self.l2 = None
 
+    @property
     def nocc(self):
         self._nocc = int(self.mo_occ.sum()) // 2
         return self._nocc
 
+    @property
     def nmo(self):
-        self._nmo = len(self.mo_energy)
+        self._nmo = len(self.mo_occ)
         return self._nmo
 
     def init_amps(self, eris):
-        nocc = self.nocc()
-        nvir = self.nmo() - nocc
+        nocc = self.nocc
+        nvir = self.nmo - nocc
         mo_e = eris.fock.diagonal()
         eia = mo_e[:nocc,None] - mo_e[None,nocc:]
         t2 = numpy.empty((nocc,nvir,nocc,nvir))
@@ -229,9 +229,7 @@ class CCSD(lib.StreamObject):
         eris = self.ao2mo()
         self._conv, self.ecc, self.t1, self.t2 = \
                 kernel(self, eris, t1, t2, max_cycle=self.max_cycle,
-                       tol=self.conv_tol,
-                       tolnormt=self.conv_tol_normt,
-                       max_memory=self.max_memory-lib.current_memory()[0],
+                       tol=self.conv_tol, tolnormt=self.conv_tol_normt,
                        verbose=self.verbose)
         return self.ecc, self.t1, self.t2
 
@@ -256,8 +254,8 @@ CC = CCSD
 
 class _ERIS:
     def __init__(self, cc):
-        nocc = cc.nocc()
-        nmo = cc.nmo()
+        nocc = cc.nocc
+        nmo = cc.nmo
         mo_coeff = cc.mo_coeff
         eri1 = ao2mo.incore.full(cc._scf._eri, mo_coeff)
         eri1 = ao2mo.restore(1, eri1, nmo)
@@ -268,7 +266,7 @@ class _ERIS:
         self.ovov = eri1[:nocc,nocc:,:nocc,nocc:].copy()
         self.ovvv = eri1[:nocc,nocc:,nocc:,nocc:].copy()
         self.vvvv = eri1[nocc:,nocc:,nocc:,nocc:].copy()
-        self.fock = numpy.diag(cc.mo_energy)
+        self.fock = numpy.diag(cc._scf.mo_energy)
 
 if __name__ == '__main__':
     from pyscf import gto

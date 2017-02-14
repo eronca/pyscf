@@ -21,13 +21,12 @@ direct_nosym        No            No             No**               Yes
 import sys
 import ctypes
 import numpy
-import pyscf.lib
-import pyscf.gto
-import pyscf.ao2mo
+from pyscf import lib
+from pyscf import ao2mo
 from pyscf.fci import cistring
 from pyscf.fci import direct_spin1
 
-libfci = pyscf.lib.load_library('libfci')
+libfci = lib.load_library('libfci')
 
 # When the spin-orbitals do not have the degeneracy on spacial part,
 # there is only one version of FCI which is close to _spin1 solver.
@@ -41,7 +40,7 @@ def contract_1e(f1e, fcivec, norb, nelec, link_index=None):
     nb, nlinkb = link_indexb.shape[:2]
     assert(fcivec.size == na*nb)
     ci1 = numpy.zeros_like(fcivec)
-    f1e_tril = pyscf.lib.pack_tril(f1e[0])
+    f1e_tril = lib.pack_tril(f1e[0])
     libfci.FCIcontract_a_1e(f1e_tril.ctypes.data_as(ctypes.c_void_p),
                             fcivec.ctypes.data_as(ctypes.c_void_p),
                             ci1.ctypes.data_as(ctypes.c_void_p),
@@ -50,7 +49,7 @@ def contract_1e(f1e, fcivec, norb, nelec, link_index=None):
                             ctypes.c_int(nlinka), ctypes.c_int(nlinkb),
                             link_indexa.ctypes.data_as(ctypes.c_void_p),
                             link_indexb.ctypes.data_as(ctypes.c_void_p))
-    f1e_tril = pyscf.lib.pack_tril(f1e[1])
+    f1e_tril = lib.pack_tril(f1e[1])
     libfci.FCIcontract_b_1e(f1e_tril.ctypes.data_as(ctypes.c_void_p),
                             fcivec.ctypes.data_as(ctypes.c_void_p),
                             ci1.ctypes.data_as(ctypes.c_void_p),
@@ -71,9 +70,9 @@ def contract_1e(f1e, fcivec, norb, nelec, link_index=None):
 # Please refer to the treatment in direct_spin1.absorb_h1e
 def contract_2e(eri, fcivec, norb, nelec, link_index=None):
     fcivec = numpy.asarray(fcivec, order='C')
-    g2e_aa = pyscf.ao2mo.restore(4, eri[0], norb)
-    g2e_ab = pyscf.ao2mo.restore(4, eri[1], norb)
-    g2e_bb = pyscf.ao2mo.restore(4, eri[2], norb)
+    g2e_aa = ao2mo.restore(4, eri[0], norb)
+    g2e_ab = ao2mo.restore(4, eri[1], norb)
+    g2e_bb = ao2mo.restore(4, eri[2], norb)
 
     link_indexa, link_indexb = direct_spin1._unpack(norb, nelec, link_index)
     na, nlinka = link_indexa.shape[:2]
@@ -94,11 +93,7 @@ def contract_2e(eri, fcivec, norb, nelec, link_index=None):
     return ci1
 
 def contract_2e_hubbard(u, fcivec, norb, nelec, opt=None):
-    if isinstance(nelec, (int, numpy.number)):
-        nelecb = nelec//2
-        neleca = nelec - nelecb
-    else:
-        neleca, nelecb = nelec
+    neleca, nelecb = direct_spin1._unpack_nelec(nelec)
     u_aa, u_ab, u_bb = u
 
     strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
@@ -124,24 +119,18 @@ def contract_2e_hubbard(u, fcivec, norb, nelec, opt=None):
     return fcinew
 
 def make_hdiag(h1e, eri, norb, nelec):
-    if isinstance(nelec, (int, numpy.number)):
-        nelecb = nelec//2
-        neleca = nelec - nelecb
-    else:
-        neleca, nelecb = nelec
+    neleca, nelecb = direct_spin1._unpack_nelec(nelec)
     h1e_a = numpy.ascontiguousarray(h1e[0])
     h1e_b = numpy.ascontiguousarray(h1e[1])
-    g2e_aa = pyscf.ao2mo.restore(1, eri[0], norb)
-    g2e_ab = pyscf.ao2mo.restore(1, eri[1], norb)
-    g2e_bb = pyscf.ao2mo.restore(1, eri[2], norb)
+    g2e_aa = ao2mo.restore(1, eri[0], norb)
+    g2e_ab = ao2mo.restore(1, eri[1], norb)
+    g2e_bb = ao2mo.restore(1, eri[2], norb)
 
-    link_indexa = cistring.gen_linkstr_index(range(norb), neleca)
-    link_indexb = cistring.gen_linkstr_index(range(norb), nelecb)
-    na = link_indexa.shape[0]
-    nb = link_indexb.shape[0]
+    strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
+    strsb = numpy.asarray(cistring.gen_strings4orblist(range(norb), nelecb))
+    na = len(strsa)
+    nb = len(strsb)
 
-    occslista = numpy.asarray(link_indexa[:,:neleca,0], order='C')
-    occslistb = numpy.asarray(link_indexb[:,:nelecb,0], order='C')
     hdiag = numpy.empty(na*nb)
     jdiag_aa = numpy.asarray(numpy.einsum('iijj->ij',g2e_aa), order='C')
     jdiag_ab = numpy.asarray(numpy.einsum('iijj->ij',g2e_ab), order='C')
@@ -159,17 +148,17 @@ def make_hdiag(h1e, eri, norb, nelec):
                              ctypes.c_int(norb),
                              ctypes.c_int(na), ctypes.c_int(nb),
                              ctypes.c_int(neleca), ctypes.c_int(nelecb),
-                             occslista.ctypes.data_as(ctypes.c_void_p),
-                             occslistb.ctypes.data_as(ctypes.c_void_p))
+                             strsa.ctypes.data_as(ctypes.c_void_p),
+                             strsb.ctypes.data_as(ctypes.c_void_p))
     return numpy.asarray(hdiag)
 
 def absorb_h1e(h1e, eri, norb, nelec, fac=1):
     if not isinstance(nelec, (int, numpy.number)):
         nelec = sum(nelec)
     h1e_a, h1e_b = h1e
-    h2e_aa = pyscf.ao2mo.restore(1, eri[0], norb).copy()
-    h2e_ab = pyscf.ao2mo.restore(1, eri[1], norb).copy()
-    h2e_bb = pyscf.ao2mo.restore(1, eri[2], norb).copy()
+    h2e_aa = ao2mo.restore(1, eri[0], norb).copy()
+    h2e_ab = ao2mo.restore(1, eri[1], norb).copy()
+    h2e_bb = ao2mo.restore(1, eri[2], norb).copy()
     f1e_a = h1e_a - numpy.einsum('jiik->jk', h2e_aa) * .5
     f1e_b = h1e_b - numpy.einsum('jiik->jk', h2e_bb) * .5
     f1e_a *= 1./(nelec+1e-100)
@@ -181,25 +170,29 @@ def absorb_h1e(h1e, eri, norb, nelec, fac=1):
         h2e_ab[k,k,:,:] += f1e_b
         h2e_bb[:,:,k,k] += f1e_b
         h2e_bb[k,k,:,:] += f1e_b
-    return (pyscf.ao2mo.restore(4, h2e_aa, norb) * fac,
-            pyscf.ao2mo.restore(4, h2e_ab, norb) * fac,
-            pyscf.ao2mo.restore(4, h2e_bb, norb) * fac)
+    return (ao2mo.restore(4, h2e_aa, norb) * fac,
+            ao2mo.restore(4, h2e_ab, norb) * fac,
+            ao2mo.restore(4, h2e_bb, norb) * fac)
 
-def pspace(h1e, eri, norb, nelec, hdiag, np=400):
-    if isinstance(nelec, (int, numpy.number)):
-        nelecb = nelec//2
-        neleca = nelec - nelecb
-    else:
-        neleca, nelecb = nelec
+def pspace(h1e, eri, norb, nelec, hdiag=None, np=400):
+    neleca, nelecb = direct_spin1._unpack_nelec(nelec)
     h1e_a = numpy.ascontiguousarray(h1e[0])
     h1e_b = numpy.ascontiguousarray(h1e[1])
-    g2e_aa = pyscf.ao2mo.restore(1, eri[0], norb)
-    g2e_ab = pyscf.ao2mo.restore(1, eri[1], norb)
-    g2e_bb = pyscf.ao2mo.restore(1, eri[2], norb)
+    g2e_aa = ao2mo.restore(1, eri[0], norb)
+    g2e_ab = ao2mo.restore(1, eri[1], norb)
+    g2e_bb = ao2mo.restore(1, eri[2], norb)
     link_indexa = cistring.gen_linkstr_index_trilidx(range(norb), neleca)
     link_indexb = cistring.gen_linkstr_index_trilidx(range(norb), nelecb)
     nb = link_indexb.shape[0]
-    addr = numpy.argsort(hdiag)[:np]
+    if hdiag is None:
+        hdiag = make_hdiag(h1e, eri, norb, nelec)
+    if hdiag.size < np:
+        addr = numpy.arange(hdiag.size)
+    else:
+        try:
+            addr = numpy.argpartition(hdiag, np-1)[:np]
+        except AttributeError:
+            addr = numpy.argsort(hdiag)[:np]
     addra = addr // nb
     addrb = addr % nb
     stra = numpy.array([cistring.addr2str(norb,neleca,ia) for ia in addra],
@@ -220,7 +213,7 @@ def pspace(h1e, eri, norb, nelec, hdiag, np=400):
 
     for i in range(np):
         h0[i,i] = hdiag[addr[i]]
-    h0 = pyscf.lib.hermi_triu(h0)
+    h0 = lib.hermi_triu(h0)
     return addr, h0
 
 
@@ -229,10 +222,10 @@ def pspace(h1e, eri, norb, nelec, hdiag, np=400):
 def kernel(h1e, eri, norb, nelec, ci0=None, level_shift=1e-3, tol=1e-10,
            lindep=1e-14, max_cycle=50, max_space=12, nroots=1,
            davidson_only=False, pspace_size=400, orbsym=None, wfnsym=None,
-           **kwargs):
+           ecore=0, **kwargs):
     return direct_spin1._kfactory(FCISolver, h1e, eri, norb, nelec, ci0, level_shift,
                                   tol, lindep, max_cycle, max_space, nroots,
-                                  davidson_only, pspace_size, **kwargs)
+                                  davidson_only, pspace_size, ecore=ecore, **kwargs)
 
 def energy(h1e, eri, fcivec, norb, nelec, link_index=None):
     h2e = absorb_h1e(h1e, eri, norb, nelec, .5)
@@ -285,6 +278,8 @@ class FCISolver(direct_spin1.FCISolver):
     def spin_square(self, fcivec, norb, nelec):
         from pyscf.fci import spin_op
         return spin_op.spin_square(fcivec, norb, nelec)
+
+FCI = FCISolver
 
 if __name__ == '__main__':
     from functools import reduce

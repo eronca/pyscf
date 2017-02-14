@@ -15,7 +15,6 @@ from pyscf import dft
 from pyscf.lib import logger
 from pyscf.pbc import tools
 from pyscf.pbc.gto import pseudo
-from pyscf.pbc.dft import gen_grid
 from pyscf.pbc.dft import numint
 from pyscf.pbc.df import ft_ao
 from pyscf.pbc.df import fft_jk
@@ -40,7 +39,7 @@ def get_nuc(mydf, kpts=None):
     vneR = tools.ifft(vneG, mydf.gs).real
 
     vne = [lib.dot(aoR.T.conj()*vneR, aoR)
-           for k, aoR in mydf.aoR_loop(cell, gs, kpts_lst)]
+           for k, aoR in mydf.aoR_loop(gs, kpts_lst)]
 
     if kpts is None or numpy.shape(kpts) == (3,):
         vne = vne[0]
@@ -67,7 +66,7 @@ def get_pp(mydf, kpts=None):
     # vpploc evaluated in real-space
     vpplocR = tools.ifft(vpplocG, cell.gs).real
     vpp = [lib.dot(aoR.T.conj()*vpplocR, aoR)
-           for k, aoR in mydf.aoR_loop(cell, gs, kpts_lst)]
+           for k, aoR in mydf.aoR_loop(gs, kpts_lst)]
 
     # vppnonloc evaluated in reciprocal space
     fakemol = gto.Mole()
@@ -122,7 +121,7 @@ def get_pp(mydf, kpts=None):
     return vpp
 
 
-class DF(lib.StreamObject):
+class FFTDF(lib.StreamObject):
     '''Density expansion on plane waves
     '''
     def __init__(self, cell, kpts=numpy.zeros((1,3))):
@@ -133,6 +132,8 @@ class DF(lib.StreamObject):
 
         self.kpts = kpts
         self.gs = cell.gs
+
+        self.blockdim = 240 # to mimic molecular DF object
 
 # Not input options
         self.exxdiv = None  # to mimic KRHF/KUHF object in function get_coulG
@@ -147,7 +148,8 @@ class DF(lib.StreamObject):
         logger.info(self, 'len(kpts) = %d', len(self.kpts))
         logger.debug1(self, '    kpts = %s', self.kpts)
 
-    def aoR_loop(self, cell, gs=None, kpts=None, kpt_band=None):
+    def aoR_loop(self, gs=None, kpts=None, kpt_band=None):
+        cell = self.cell
         if kpts is None: kpts = self.kpts
         kpts = numpy.asarray(kpts)
 
@@ -165,7 +167,7 @@ class DF(lib.StreamObject):
             (gs is not None and numpy.any(gs != self.gs))):
 
             nkpts = len(kpts)
-            coords = gen_grid.gen_uniform_grids(cell, gs)
+            coords = cell.gen_uniform_grids(gs)
             nao = cell.nao_nr()
             blksize = int(self.max_memory*1e6/(nkpts*nao*16*numint.BLKSIZE))*numint.BLKSIZE
             blksize = min(max(blksize, numint.BLKSIZE), ngrids)
@@ -182,11 +184,11 @@ class DF(lib.StreamObject):
                     yield k, aoR
             else:
                 kpt_band = numpy.reshape(kpt_band, 3)
-                where = numpy.argmin(pyscf.lib.norm(kpts-kpt_band,axis=1))
+                where = numpy.argmin(lib.norm(kpts-kpt_band,axis=1))
                 if abs(kpts[where]-kpt_band).sum() > 1e-9:
                     where = None
-                    coords = gen_grid.gen_uniform_grids(cell, gs)
-                    yield 0, numint.eval_ao(cell, coords, kpt_band, deriv=deriv)
+                    coords = cell.gen_uniform_grids(gs)
+                    yield 0, numint.eval_ao(cell, coords, kpt_band, deriv=0)
                 else:
                     yield where, f['ao/%d'%where].value
 
@@ -227,6 +229,27 @@ class DF(lib.StreamObject):
         mf.with_df = self
         return mf
 
+################################################################################
+# With this function to mimic the molecular DF.loop function, the pbc gamma
+# point DF object can be used in the molecular code
+    def loop(self):
+        coulG = tools.get_coulG(self.cell, numpy.zeros(3), gs=mydf.gs)
+        ngs = len(coulG)
+        ao_pairs_G = get_ao_pairs_G(mydf, kptijkl[:2], compact=True)
+        ao_pairs_G *= numpy.sqrt(coulG*(cell.vol/ngs**2)).reshape(-1,1)
+
+        Lpq = numpy.empty((self.blockdim, ao_pairs_G.shape[1]))
+        for p0, p1 in lib.prange(0, ngs, self.blockdim):
+            Lpq[:p1-p0] = ao_pairs_G[p0:p1].real
+            yield Lpq[:p1-p0]
+            Lpq[:p1-p0] = ao_pairs_G[p0:p1].imag
+            yield Lpq[:p1-p0]
+
+    def get_naoaux(self):
+        gs = numpy.asarray(mydf.gs)
+        ngs = numpy.prod(gs*2+1)
+        return ngs * 2
+
 
 if __name__ == '__main__':
     from pyscf.pbc import gto as pbcgto
@@ -234,7 +257,7 @@ if __name__ == '__main__':
     cell = pbcgto.Cell()
     cell.verbose = 0
     cell.atom = 'C 0 0 0; C 1 1 1; C 0 2 2; C 2 0 2'
-    cell.h = numpy.diag([4, 4, 4])
+    cell.a = numpy.diag([4, 4, 4])
     cell.basis = 'gth-szv'
     cell.pseudo = 'gth-pade'
     cell.gs = [10, 10, 10]

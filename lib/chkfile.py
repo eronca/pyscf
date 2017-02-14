@@ -128,15 +128,17 @@ def load_mol(chkfile):
         from numpy import array
         with h5py.File(chkfile, 'r') as fh5:
             mol = pyscf.gto.Mole()
-            mol.verbose = 0
             mol.output = '/dev/null'
             moldic = eval(fh5['mol'].value)
+            for key in ('mass', 'grids', 'light_speed'):
+                if key in moldic:
+                    del(moldic[key])
             mol.build(False, False, **moldic)
     return mol
 
 def save_mol(mol, chkfile):
     '''Save Mole object in chkfile
-    
+
     Args:
         mol : an instance of :class:`Mole`.
 

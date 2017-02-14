@@ -7,7 +7,8 @@
 # http://www.cmbi.ru.nl/molden/molden_format.html
 
 import numpy
-import pyscf.lib.parameters as param
+import pyscf
+from pyscf import lib
 from pyscf import gto
 from pyscf.lib import logger
 
@@ -29,9 +30,14 @@ def orbital_coeff(mol, fout, mo_coeff, spin='Alpha', symm=None, ene=None,
                 logger.warn(mol, str(e))
     if ene is None:
         ene = numpy.arange(nmo)
+    assert(spin == 'Alpha' or spin == 'Beta')
     if occ is None:
         occ = numpy.zeros(nmo)
-    assert(spin == 'Alpha' or spin == 'Beta')
+        neleca, nelecb = mol.nelec
+        if spin == 'Alpha':
+            occ[:neleca] = 1
+        else:
+            occ[:nelecb] = 1
     fout.write('[MO]\n')
     for imo in range(nmo):
         fout.write(' Sym= %s\n' % symm[imo])
@@ -100,6 +106,11 @@ def from_chkfile(filename, chkfile, key='scf/mo_coeff', ignore_h=False):
                 ene = None
             occ = dat['mo_occ']
             mo = dat['mo_coeff']
+
+        if ene == 'None':
+            ene = None
+        if occ == 'None':
+            occ = None
         if occ.ndim == 2:
             orbital_coeff(mol, f, mo[0], spin='Alpha', ene=ene[0], occ=occ[0],
                          ignore_h=ignore_h)
@@ -119,7 +130,7 @@ def load(moldenfile):
         if 'ANG' in line.upper():
             unit = 1
         else:
-            unit = param.BOHR
+            unit = lib.param.BOHR
 
         atoms = []
         line = f.readline()
@@ -135,7 +146,7 @@ def load(moldenfile):
 
         def read_one_bas(lsym, nb, fac):
             fac = float(fac)
-            bas = [param.ANGULARMAP[lsym],]
+            bas = [lib.param.ANGULARMAP[lsym],]
             for i in range(int(nb)):
                 dat = _d2e(f.readline()).split()
                 bas.append((float(dat[0]), float(dat[1])*fac))
@@ -224,8 +235,9 @@ def _d2e(token):
 def header(mol, fout, ignore_h=False):
     if ignore_h:
         mol = remove_high_l(mol)[0]
-    fout.write('''[Molden Format]
-[Atoms] (AU)\n''')
+    fout.write('[Molden Format]\n')
+    fout.write('made by pyscf v[%s]\n' % pyscf.__version__)
+    fout.write('[Atoms] (AU)\n')
     for ia in range(mol.natm):
         symb = mol.atom_pure_symbol(ia)
         chg = mol.atom_charge(ia)
@@ -233,21 +245,18 @@ def header(mol, fout, ignore_h=False):
         coord = mol.atom_coord(ia)
         fout.write('%18.14f   %18.14f   %18.14f\n' % tuple(coord))
     fout.write('[GTO]\n')
-    for ia in range(mol.natm):
+    for ia, (sh0, sh1, p0, p1) in enumerate(mol.offset_nr_by_atom()):
         fout.write('%d 0\n' %(ia+1))
-        for b in mol._basis[mol.atom_symbol(ia)]:
-            l = b[0]
-            if isinstance(b[1], int):
-                b_coeff = b[2:]
-            else:
-                b_coeff = b[1:]
-            nprim = len(b_coeff)
-            nctr = len(b_coeff[0]) - 1
+        for ib in range(sh0, sh1):
+            l = mol.bas_angular(ib)
+            nprim = mol.bas_nprim(ib)
+            nctr = mol.bas_nctr(ib)
+            es = mol.bas_exp(ib)
+            cs = mol.bas_ctr_coeff(ib)
             for ic in range(nctr):
-                fout.write(' %s   %2d 1.00\n' % (param.ANGULAR[l], nprim))
+                fout.write(' %s   %2d 1.00\n' % (lib.param.ANGULAR[l], nprim))
                 for ip in range(nprim):
-                    fout.write('    %18.14g  %18.14g\n' %
-                               (b_coeff[ip][0], b_coeff[ip][ic+1]))
+                    fout.write('    %18.14g  %18.14g\n' % (es[ip], cs[ip,ic]))
         fout.write('\n')
     fout.write('[5d]\n[9g]\n\n')
 
@@ -281,7 +290,7 @@ def order_ao_index(mol, cart=False):
                 else:
                     idx.extend(range(off,off+(l+1)*(l+2)//2))
                 off += (l+1)*(l+2)//2
-    else:  # spheric orbitals
+    else:  # spherical orbitals
         for ib in range(mol.nbas):
             l = mol.bas_angular(ib)
             for n in range(mol.bas_nctr(ib)):
@@ -354,7 +363,7 @@ if __name__ == '__main__':
     print(order_ao_index(mol))
     orbital_coeff(mol, mol.stdout, m.mo_coeff)
 
-    ftmp = tempfile.NamedTemporaryFile()
+    ftmp = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
     from_mo(mol, ftmp.name, m.mo_coeff)
 
     print(parse(ftmp.name))

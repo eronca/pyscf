@@ -14,11 +14,11 @@ import pyscf.pbc.scf.khf as pkhf
 from pyscf.pbc.df import fft_jk
 
 
-def make_cell1(L, n, nimgs=None):
+def make_cell1(L, n):
     cell = pbcgto.Cell()
     cell.verbose = 0
     cell.unit = 'B'
-    cell.h = ((L,0,0),(0,L,0),(0,0,L))
+    cell.a = ((L,0,0),(0,L,0),(0,0,L))
     cell.gs = [n,n,n]
 
     cell.atom = [['He', (L/2.,L/2.,L/2.)], ]
@@ -26,16 +26,15 @@ def make_cell1(L, n, nimgs=None):
                          [0, (1.0, 1.0)],
                          [0, (1.2, 1.0)]] }
     cell.pseudo = None
-    cell.nimgs = nimgs
     cell.build(False, False)
     return cell
 
-def make_cell2(L, n, nimgs=None):
+def make_cell2(L, n):
     cell = pbcgto.Cell()
     cell.build(False, False,
                unit = 'B',
                verbose = 0,
-               h = ((L,0,0),(0,L,0),(0,0,L)),
+               a = ((L,0,0),(0,L,0),(0,0,L)),
                gs = [n,n,n],
                atom = [['He', (L/2.-.5,L/2.,L/2.-.5)],
                        ['He', (L/2.   ,L/2.,L/2.+.5)]],
@@ -79,7 +78,7 @@ def get_t(cell, kpt=np.zeros(3)):
 
 class KnowValues(unittest.TestCase):
     def test_olvp(self):
-        cell = make_cell1(4, 20, [2,2,2])
+        cell = make_cell1(4, 20)
         s0 = get_ovlp(cell)
         s1 = scfint.get_ovlp(cell)
         self.assertAlmostEqual(numpy.linalg.norm(s0-s1), 0, 8)
@@ -90,13 +89,13 @@ class KnowValues(unittest.TestCase):
         self.assertAlmostEqual(numpy.linalg.norm(s0-s1), 0, 8)
 
     def test_t(self):
-        cell = make_cell1(4, 20, [2,2,2])
+        cell = make_cell1(4, 20)
         t0 = get_t(cell, kpt=k)
         t1 = scfint.get_t(cell, kpt=k)
         self.assertAlmostEqual(numpy.linalg.norm(t0-t1), 0, 8)
 
     def test_vkR(self):
-        cell = make_cell1(4, 20, [2,2,2])
+        cell = make_cell1(4, 20)
         mf = phf.RHF(cell)
         numpy.random.seed(1)
         kpt1, kpt2 = numpy.random.random((2,3))

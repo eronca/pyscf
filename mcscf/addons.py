@@ -42,7 +42,7 @@ def sort_mo(casscf, mo_coeff, caslst, base=1):
     >>> mf.scf()
     >>> mc = mcscf.CASSCF(mf, 4, 4)
     >>> cas_list = [5,6,8,9] # pi orbitals
-    >>> mo = mcscf.sort_mo(mc, mf.mo_coeff, cas_list)
+    >>> mo = mc.sort_mo(cas_list)
     >>> mc.kernel(mo)[0]
     -109.007378939813691
     '''
@@ -128,8 +128,7 @@ def caslst_by_irrep(casscf, mo_coeff, cas_irrep_nocc,
     log = logger.Logger(casscf.stdout, casscf.verbose)
     if s is None:
         s = casscf._scf.get_ovlp()
-    orbsym = symm.label_orb_symm(mol, mol.irrep_id,
-                                 mol.symm_orb, mo_coeff, s)
+    orbsym = symm.label_orb_symm(mol, mol.irrep_id, mol.symm_orb, mo_coeff, s)
     orbsym = numpy.asarray(orbsym)
     ncore = casscf.ncore
 
@@ -256,9 +255,9 @@ def sort_mo_by_irrep(casscf, mo_coeff, cas_irrep_nocc,
     >>> mf = scf.RHF(mol)
     >>> mf.kernel()
     >>> mc = mcscf.CASSCF(mf, 12, 4)
-    >>> mo = mcscf.sort_mo_by_irrep(mc, mf.mo_coeff, {'E1gx':4, 'E1gy':4, 'E1ux':2, 'E1uy':2})
-    >>> # identical to mo = sort_mo_by_irrep(mc, mf.mo_coeff, {2: 4, 3: 4, 6: 2, 7: 2})
-    >>> # identical to mo = sort_mo_by_irrep(mc, mf.mo_coeff, [0, 0, 4, 4, 0, 0, 2, 2])
+    >>> mo = mc.sort_mo_by_irrep({'E1gx':4, 'E1gy':4, 'E1ux':2, 'E1uy':2})
+    >>> # Same to mo = sort_mo_by_irrep(mc, mf.mo_coeff, {2: 4, 3: 4, 6: 2, 7: 2})
+    >>> # Same to mo = sort_mo_by_irrep(mc, mf.mo_coeff, [0, 0, 4, 4, 0, 0, 2, 2])
     >>> mc.kernel(mo)[0]
     -108.162863845084
     '''
@@ -503,14 +502,14 @@ def spin_square(casscf, mo_coeff=None, ci=None, ovlp=None):
     S^2 = 3.9831589, 2S+1 = 4.1149284
     '''
     if ci is None: ci = casscf.ci
-    if mo_coeff is None: mo_coeff = casscf.mo_coeff
-    if ovlp is None: ovlp = casscf._scf.get_ovlp()
     ncore    = casscf.ncore
     ncas     = casscf.ncas
     nelecas  = casscf.nelecas
     if isinstance(ncore, (int, numpy.integer)):
         return fci.spin_op.spin_square0(ci, ncas, nelecas)
     else:
+        if mo_coeff is None: mo_coeff = casscf.mo_coeff
+        if ovlp is None: ovlp = casscf._scf.get_ovlp()
         nocc = (ncore[0] + ncas, ncore[1] + ncas)
         mocas = (mo_coeff[0][:,ncore[0]:nocc[0]], mo_coeff[1][:,ncore[1]:nocc[1]])
         sscas = fci.spin_op.spin_square(ci, ncas, nelecas, mocas, ovlp)
@@ -522,7 +521,7 @@ def spin_square(casscf, mo_coeff=None, ci=None, ovlp=None):
         return ss, s*2+1
 
 
-def state_average(casscf, weights=(0.5,0.5)):
+def state_average_(casscf, weights=(0.5,0.5)):
     ''' State average over the energy.  The energy funcitonal is
     E = w1<psi1|H|psi1> + w2<psi2|H|psi2> + ...
 
@@ -532,12 +531,19 @@ def state_average(casscf, weights=(0.5,0.5)):
 
     before calling state_average_(mc), to mix the singlet and triplet states
     '''
-    assert(abs(sum(weights)-1) < 1e-10)
-    fcibase = casscf.fcisolver
+    assert(abs(sum(weights)-1) < 1e-3)
     fcibase_class = casscf.fcisolver.__class__
+    if fcibase_class.__name__ == 'FakeCISolver':
+        sys.stderr.write('state_average function cannot work with decorated '
+                         'fcisolver %s.\nYou can restore the base fcisolver '
+                         'then call state_average function, eg\n'
+                         '    mc.fcisolver = %s.%s(mc.mol)\n'
+                         '    mc.state_average_()\n' %
+                         (casscf.fcisolver, fcibase_class.__base__.__module__,
+                          fcibase_class.__base__.__name__))
+        raise TypeError('mc.fcisolver is not base FCI solver')
     class FakeCISolver(fcibase_class):
-        def __init__(self):
-            self.__dict__.update(fcibase.__dict__)
+        def __init__(self, mol=None):
             self.nroots = len(weights)
         def kernel(self, h1, h2, norb, nelec, ci0=None, **kwargs):
 # pass self to fcibase_class.kernel function because orbsym argument is stored in self 
@@ -546,10 +552,10 @@ def state_average(casscf, weights=(0.5,0.5)):
                                         nroots=self.nroots, **kwargs)
             if (casscf.verbose >= logger.DEBUG and
                 hasattr(fcibase_class, 'spin_square')):
-                ss = fcibase_class.spin_square(self, c, norb, nelec)
                 for i, ei in enumerate(e):
+                    ss = fcibase_class.spin_square(self, c[i], norb, nelec)
                     logger.debug(casscf, 'state %d  E = %.15g S^2 = %.7f',
-                                 i, ei, ss[0][i])
+                                 i, ei, ss[0])
             return numpy.einsum('i,i->', e, weights), c
         def approx_kernel(self, h1, h2, norb, nelec, ci0=None, **kwargs):
             e, c = fcibase_class.kernel(self, h1, h2, norb, nelec, ci0,
@@ -572,30 +578,41 @@ def state_average(casscf, weights=(0.5,0.5)):
 
         if hasattr(fcibase_class, 'spin_square'):
             def spin_square(self, ci0, norb, nelec):
-                ss = fcibase_class.spin_square(self, ci0, norb, nelec)[0]
-                ss = numpy.einsum('i,i->', weights, ss)
-                multip = numpy.sqrt(ss+.25)*2
+                ss = 0
+                multip = 0
+                for i, wi in enumerate(weights):
+                    res = fcibase_class.spin_square(self, ci0[i], norb, nelec)
+                    ss += wi * res[0]
+                    multip += wi * res[1]
                 return ss, multip
 
-    return FakeCISolver()
-
-def state_average_(casscf, weights=(0.5,0.5)):
-    casscf.fcisolver = state_average(casscf, weights)
+    fcisolver = FakeCISolver(casscf.mol)
+    fcisolver.__dict__.update(casscf.fcisolver.__dict__)
+    fcisolver.nroots = len(weights)
+    casscf.fcisolver = fcisolver
     return casscf
+state_average = state_average_
 
 
-def state_specific(casscf, state=1):
+def state_specific_(casscf, state=1):
     '''For excited state
 
     Kwargs:
         state : int
         0 for ground state; 1 for first excited state.
     '''
-    fcibase = casscf.fcisolver
     fcibase_class = casscf.fcisolver.__class__
+    if fcibase_class.__name__ == 'FakeCISolver':
+        sys.stderr.write('state_specific function cannot work with decorated '
+                         'fcisolver %s.\nYou can restore the base fcisolver '
+                         'then call state_specific function, eg\n'
+                         '    mc.fcisolver = %s.%s(mc.mol)\n'
+                         '    mc.state_specific_()\n' %
+                         (casscf.fcisolver, fcibase_class.__base__.__module__,
+                          fcibase_class.__base__.__name__))
+        raise TypeError('mc.fcisolver is not base FCI solver')
     class FakeCISolver(fcibase_class):
         def __init__(self):
-            self.__dict__.update(fcibase.__dict__)
             self.nroots = state+1
             self._civec = None
         def kernel(self, h1, h2, norb, nelec, ci0=None, **kwargs):
@@ -603,12 +620,15 @@ def state_specific(casscf, state=1):
                 ci0 = self._civec
             e, c = fcibase_class.kernel(self, h1, h2, norb, nelec, ci0,
                                         nroots=self.nroots, **kwargs)
+            if state == 0:
+                e = [e]
+                c = [c]
             self._civec = c
             if (casscf.verbose >= logger.DEBUG and
                 hasattr(fcibase_class, 'spin_square')):
                 ss = fcibase_class.spin_square(self, c[state], norb, nelec)
                 logger.debug(casscf, 'state %d  E = %.15g S^2 = %.7f',
-                             state+1, e[state], ss[0])
+                             state, e[state], ss[0])
             return e[state], c[state]
         def approx_kernel(self, h1, h2, norb, nelec, ci0=None, **kwargs):
             if self._civec is not None:
@@ -616,85 +636,124 @@ def state_specific(casscf, state=1):
             e, c = fcibase_class.kernel(self, h1, h2, norb, nelec, ci0,
                                         max_cycle=casscf.ci_response_space,
                                         nroots=self.nroots, **kwargs)
-            self._civec = c
-            return e[state], c[state]
+            if state == 0:
+                self._civec = [c]
+                return e, c
+            else:
+                self._civec = c
+                return e[state], c[state]
 
-        if hasattr(fcibase_class, 'spin_square'):
-            def spin_square(self, fcivec, norb, nelec):
-                return fci.spin_op.spin_square0(fcivec, norb, nelec)
-
-    return FakeCISolver()
-
-def state_specific_(casscf, state=1):
-    casscf.fcisolver = state_specific(casscf, state)
+    fcisolver = FakeCISolver()
+    fcisolver.__dict__.update(casscf.fcisolver.__dict__)
+    fcisolver.nroots = state+1
+    casscf.fcisolver = fcisolver
     return casscf
+state_specific = state_specific_
 
-def state_average_mix(casscf, fcisolvers, weights=(0.5,0.5)):
+def state_average_mix_(casscf, fcisolvers, weights=(0.5,0.5)):
     '''State-average CASSCF over multiple FCI solvers.
     '''
-    fcibase_class = casscf.fcisolver.__class__
-    ci_response_space = casscf.ci_response_space
+    fcibase_class = fcisolvers[0].__class__
+#    if fcibase_class.__name__ == 'FakeCISolver':
+#        logger.warn(casscf, 'casscf.fcisolver %s is a decorated FCI solver. '
+#                    'state_average_mix_ function rolls back to the base solver %s',
+#                    fcibase_class, fcibase_class.__base__)
+#        fcibase_class = fcibase_class.__base__
     nroots = sum(solver.nroots for solver in fcisolvers)
     assert(nroots == len(weights))
 
-    def collect(ec_lst):
-        e = []
-        c = []
-        for e1, c1 in ec_lst:
-            if isinstance(c1, (tuple, list)):
-                e.extend(e1)
-                c.extend(c1)
+    def collect(items):
+        items = list(items)
+        cols = [[item[i] for item in items] for i in range(len(items[0]))]
+        return cols
+    def loop_solver(solvers, ci0):
+        p0 = 0
+        for solver in solvers:
+            if ci0 is None:
+                yield solver, None
+            elif solver.nroots == 1:
+                yield solver, ci0[p0]
             else:
-                e.append(e1)
-                c.append(c1)
-        return e, c
+                yield solver, ci0[p0:p0+solver.nroots]
+            p0 += solver.nroots
+    def loop_civecs(solvers, ci0):
+        p0 = 0
+        for solver in solvers:
+            for i in range(p0, p0+solver.nroots):
+                yield solver, ci0[i]
+            p0 += solver.nroots
+    def get_nelec(solver, nelec):
+        if solver.spin is not None:
+            nelec = numpy.sum(nelec)
+            nelec = (nelec+solver.spin)//2, (nelec-solver.spin)//2
+        return nelec
 
     class FakeCISolver(fcibase_class):
-        def kernel(self, h1, h2, ncas, nelecas, ci0=None, verbose=0, **kwargs):
+        def kernel(self, h1, h2, norb, nelec, ci0=None, verbose=0, **kwargs):
 # Note self.orbsym is initialized lazily in mc1step_symm.kernel function
             if isinstance(verbose, logger.Logger):
                 log = verbose
             else:
                 log = logger.Logger(sys.stdout, verbose)
-            e, c = collect(solver.kernel(h1, h2, ncas, nelecas, ci0,
-                                         orbsym=self.orbsym, verbose=log, **kwargs)
-                           for solver in fcisolvers)
-            for i, ei in enumerate(e):
-                ss = fci.spin_op.spin_square0(c[i], ncas, nelecas)
-                log.info('state %d  E = %.15g S^2 = %.7f', i, ei, ss[0])
-            return numpy.einsum('i,i', numpy.array(e), weights), c
+            es = []
+            cs = []
+            for solver, c0 in loop_solver(fcisolvers, ci0):
+                e, c = solver.kernel(h1, h2, norb, get_nelec(solver, nelec), c0,
+                                     orbsym=self.orbsym, verbose=log, **kwargs)
+                if solver.nroots == 1:
+                    es.append(e)
+                    cs.append(c)
+                else:
+                    es.extend(e)
+                    cs.extend(c)
+            ss, multip = collect(solver.spin_square(c0, norb, get_nelec(solver, nelec))
+                                 for solver, c0 in loop_civecs(fcisolvers, cs))
+            for i, ei in enumerate(es):
+                 log.info('state %d  E = %.15g S^2 = %.7f', i, ei, ss[i])
+            return numpy.einsum('i,i', numpy.array(es), weights), cs
 
         def approx_kernel(self, h1, h2, norb, nelec, ci0=None, **kwargs):
-            e, c = collect(solver.kernel(h1, h2, norb, nelec, ci0, orbsym=self.orbsym,
-                                         max_cycle=ci_response_space, **kwargs)
-                           for solver in fcisolvers)
-            return numpy.einsum('i,i->', e, weights), c
-        def make_rdm1(self, ci0, norb, nelec):
+            es = []
+            cs = []
+            for solver, c0 in loop_solver(fcisolvers, ci0):
+                e, c = solver.kernel(h1, h2, norb, get_nelec(solver, nelec), c0,
+                                     orbsym=self.orbsym, **kwargs)
+                if solver.nroots == 1:
+                    es.append(e)
+                    cs.append(c)
+                else:
+                    es.extend(e)
+                    cs.extend(c)
+            return numpy.einsum('i,i->', es, weights), cs
+        def make_rdm1(self, ci0, norb, nelec, **kwargs):
             dm1 = 0
-            for i, wi in enumerate(weights):
-                dm1 += wi*fcibase_class.make_rdm1(self, ci0[i], norb, nelec)
+            for i, (solver, c) in enumerate(loop_civecs(fcisolvers, ci0)):
+                dm1 += weights[i]*solver.make_rdm1(c, norb, get_nelec(solver, nelec), **kwargs)
             return dm1
-        def make_rdm12(self, ci0, norb, nelec):
+        def make_rdm12(self, ci0, norb, nelec, **kwargs):
             rdm1 = 0
             rdm2 = 0
-            for i, wi in enumerate(weights):
-                dm1, dm2 = fcibase_class.make_rdm12(self, ci0[i], norb, nelec)
-                rdm1 += wi * dm1
-                rdm2 += wi * dm2
+            for i, (solver, c) in enumerate(loop_civecs(fcisolvers, ci0)):
+                dm1, dm2 = solver.make_rdm12(c, norb, get_nelec(solver, nelec), **kwargs)
+                rdm1 += weights[i] * dm1
+                rdm2 += weights[i] * dm2
             return rdm1, rdm2
-        def spin_square(self, ci0, norb, nelec):
-            ss = [fci.spin_op.spin_square0(x, norb, nelec)[0] for x in ci0]
-            ss = numpy.einsum('i,i->', weights, ss)
-            multip = numpy.sqrt(ss+.25)*2
-            return ss, multip
 
-    fcisolver = FakeCISolver()
+        if hasattr(fcibase_class, 'spin_square'):
+            def spin_square(self, ci0, norb, nelec):
+                ss = 0
+                multip = 0
+                for i, (solver, c) in enumerate(loop_civecs(fcisolvers, ci0)):
+                    res = solver.spin_square(c, norb, nelec)
+                    ss += weights[i] * res[0]
+                    multip += weights[i] * res[1]
+                return ss, multip
+
+    fcisolver = FakeCISolver(casscf.mol)
     fcisolver.__dict__.update(casscf.fcisolver.__dict__)
-    return fcisolver
-
-def state_average_mix_(casscf, fcisolvers, weights=(0.5,0.5)):
-    casscf.fcisolver = state_average_mix(casscf, fcisolvers, weights)
+    casscf.fcisolver = fcisolver
     return casscf
+state_average_mix = state_average_mix_
 
 def hot_tuning_(casscf, configfile=None):
     '''Allow you to tune CASSCF parameters on the runtime
@@ -739,7 +798,7 @@ def hot_tuning_(casscf, configfile=None):
                 '# You can modify some variables with inplace updating, eg\n'
                 '# from pyscf import fci\n'
                 '# if imacro > 6:\n'
-                '#     casscf.fcislover = fci.fix_spin_(fci.direct_spin1, ss_value=2)\n'
+                '#     casscf.fcislover = fci.fix_spin_(fci.direct_spin1, ss=2)\n'
                 '#     mo[:,:3] *= -1\n'
                 '# Warning: this runtime modification is unsafe and highly unrecommended.\n')
 
@@ -839,7 +898,7 @@ if __name__ == '__main__':
     mc.verbose = 4
     mc.fcisolver = fci.solver(mol, False) # to mix the singlet and triplet
     mc = state_average_(mc, (.64,.36))
-    emc, e_ci, fcivec, mo, mo_energy = mc.mc1step()[:4]
+    emc, e_ci, fcivec, mo, mo_energy = mc.mc1step()[:5]
     mc = mcscf.CASCI(m, 4, 4)
     emc = mc.casci(mo)[0]
     print(ehf, emc, emc-ehf)
@@ -848,7 +907,7 @@ if __name__ == '__main__':
     mc = mcscf.CASSCF(m, 4, 4)
     mc.verbose = 4
     mc = state_average_(mc, (.64,.36))
-    emc, e_ci, fcivec, mo, mo_energy = mc.mc1step()[:4]
+    emc, e_ci, fcivec, mo, mo_energy = mc.mc1step()[:5]
     mc = mcscf.CASCI(m, 4, 4)
     emc = mc.casci(mo)[0]
     print(ehf, emc, emc-ehf)

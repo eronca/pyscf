@@ -18,7 +18,7 @@ from pyscf import lib
 from pyscf.lib import logger
 from pyscf.scf import diis
 from pyscf.scf import _vhf
-import pyscf.scf.chkfile
+from pyscf.scf import chkfile
 
 
 def kernel(mf, conv_tol=1e-10, conv_tol_grad=None,
@@ -120,7 +120,7 @@ Keyword argument "init_dm" is replaced by "dm0"''')
     if dump_chk:
         # Explicit overwrite the mol object in chkfile
         # Note in pbc.scf, mf.mol == mf.cell, cell is saved under key "mol"
-        pyscf.scf.chkfile.save_mol(mol, mf.chkfile)
+        chkfile.save_mol(mol, mf.chkfile)
 
     scf_conv = False
     cycle = 0
@@ -358,7 +358,7 @@ def init_guess_by_chkfile(mol, chkfile_name, project=True):
         Density matrix, 2D ndarray
     '''
     from pyscf.scf import addons
-    chk_mol, scf_rec = pyscf.scf.chkfile.load_scf(chkfile_name)
+    chk_mol, scf_rec = chkfile.load_scf(chkfile_name)
 
     def fproj(mo):
         if project:
@@ -681,8 +681,8 @@ def get_grad(mo_coeff, mo_occ, fock_ao):
     occidx = mo_occ > 0
     viridx = ~occidx
 
-    g = reduce(numpy.dot, (mo_coeff[:,viridx].T.conj(), fock_ao,
-                           mo_coeff[:,occidx])) * 2
+    g = reduce(numpy.dot, (mo_coeff[:,viridx].T, fock_ao.T,
+                           mo_coeff[:,occidx].conj())) * 2
     return g.reshape(-1)
 
 
@@ -823,7 +823,7 @@ def canonicalize(mf, mo_coeff, mo_occ, fock=None):
             orb = mo_coeff[:,idx]
             f1 = reduce(numpy.dot, (orb.T.conj(), fock, orb))
             e, c = scipy.linalg.eigh(f1)
-            mo[:,idx] = numpy.dot(mo_coeff[:,idx], c)
+            mo[:,idx] = numpy.dot(orb, c)
             mo_e[idx] = e
     return mo_e, mo
 
@@ -832,9 +832,9 @@ def dip_moment(mol, dm, unit_symbol='Debye', verbose=logger.NOTE):
 
     .. math::
 
-        \mu_x = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|x|\mu) + \sum_A Z_A X_A
-        \mu_y = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|y|\mu) + \sum_A Z_A Y_A
-        \mu_z = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|z|\mu) + \sum_A Z_A Z_A
+        \mu_x = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|x|\mu) + \sum_A Q_A X_A\\
+        \mu_y = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|y|\mu) + \sum_A Q_A Y_A\\
+        \mu_z = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|z|\mu) + \sum_A Q_A Z_A
 
     where :math:`\mu_x, \mu_y, \mu_z` are the x, y and z components of dipole
     moment
@@ -972,7 +972,7 @@ class SCF(lib.StreamObject):
 
 # the chkfile will be removed automatically, to save the chkfile, assign a
 # filename to self.chkfile
-        self._chkfile = tempfile.NamedTemporaryFile()
+        self._chkfile = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
         self.chkfile = self._chkfile.name
         self.conv_tol = 1e-9
         self.conv_tol_grad = None
@@ -1058,10 +1058,10 @@ class SCF(lib.StreamObject):
 
     def dump_chk(self, envs):
         if self.chkfile:
-            pyscf.scf.chkfile.dump_scf(self.mol, self.chkfile,
-                                       envs['e_tot'], envs['mo_energy'],
-                                       envs['mo_coeff'], envs['mo_occ'],
-                                       overwrite_mol=False)
+            chkfile.dump_scf(self.mol, self.chkfile,
+                             envs['e_tot'], envs['mo_energy'],
+                             envs['mo_coeff'], envs['mo_occ'],
+                             overwrite_mol=False)
         return self
 
     @lib.with_doc(init_guess_by_minao.__doc__)
@@ -1097,14 +1097,6 @@ class SCF(lib.StreamObject):
         return self.init_guess_by_chkfile(chkfile, project)
     from_chk.__doc__ = init_guess_by_chkfile.__doc__
 
-    def update_from_chk(self, chkfile=None):
-        '''Read attributes from the chkfile then replace the attributes of
-        current object.
-        '''
-        if chkfile is None: chkfile = self.chkfile
-        self.__dict__.update(pyscf.scf.chkfile.load(chkfile, 'scf'))
-        return self
-
     def get_init_guess(self, mol=None, key='minao'):
         if mol is None:
             mol = self.mol
@@ -1127,8 +1119,12 @@ class SCF(lib.StreamObject):
         else:
             dm = self.init_guess_by_minao(mol)
         if self.verbose >= logger.DEBUG1:
-            logger.debug1(self, 'Nelec from initial guess = %g',
-                          (dm*self.get_ovlp()).sum().real)
+            s = self.get_ovlp()
+            if isinstance(dm, numpy.ndarray) and dm.ndim == 2:
+                nelec = (dm.T*s).sum()
+            else:  # UHF
+                nelec = (dm[0].T*s).sum() + (dm[1].T*s).sum()
+            logger.debug1(self, 'Nelec from initial guess = %g', nelec.real)
         return dm
 
     # full density matrix for RHF
@@ -1182,7 +1178,7 @@ class SCF(lib.StreamObject):
         if self.converged:
             logger.note(self, 'converged SCF energy = %.15g', self.e_tot)
         else:
-            logger.note(self, 'SCF not converge.')
+            logger.note(self, 'SCF not converged.')
             logger.note(self, 'SCF energy = %.15g after %d cycles',
                         self.e_tot, self.max_cycle)
         return self
@@ -1278,10 +1274,14 @@ class SCF(lib.StreamObject):
         return pyscf.scf.x2c.sfx2c1e(self)
 
     def update(self, chkfile=None):
+        '''Read attributes from the chkfile then replace the attributes of
+        current object.  See also mf.update_from_chk
+        '''
         return self.update_from_chk(chkfile)
     def update_from_chk(self, chkfile=None):
+        from pyscf.scf import chkfile as chkmod
         if chkfile is None: chkfile = self.chkfile
-        self.__dict__.update(pyscf.scf.chkfile.load(chkfile, 'scf'))
+        self.__dict__.update(chkmod.load(chkfile, 'scf'))
         return self
 
     @property

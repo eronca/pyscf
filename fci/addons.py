@@ -1,8 +1,9 @@
 #!/usr/bin/env python
 
+import sys
 import copy
 import numpy
-import pyscf.lib
+from pyscf import lib
 from pyscf.fci import cistring
 from pyscf import symm
 
@@ -170,6 +171,18 @@ def symm_initguess(norb, nelec, orbsym, wfnsym=0, irrep_nelec=None):
     return ci1
 
 
+def _symmetrize_wfn(ci, strsa, strsb, orbsym, wfnsym=0):
+    ci = ci.reshape(strsa.size,strsb.size)
+    airreps = numpy.zeros(strsa.size, dtype=numpy.int32)
+    birreps = numpy.zeros(strsb.size, dtype=numpy.int32)
+    for i, ir in enumerate(orbsym):
+        airreps[numpy.bitwise_and(strsa, 1<<i) > 0] ^= ir
+        birreps[numpy.bitwise_and(strsb, 1<<i) > 0] ^= ir
+    mask = (airreps.reshape(-1,1) ^ birreps) == wfnsym
+    ci1 = numpy.zeros_like(ci)
+    ci1[mask] = ci[mask]
+    ci1 *= 1/numpy.linalg.norm(ci1)
+    return ci1
 def symmetrize_wfn(ci, norb, nelec, orbsym, wfnsym=0):
     '''Symmetrize the CI wavefunction by zeroing out the determinants which
     do not have the right symmetry.
@@ -194,19 +207,28 @@ def symmetrize_wfn(ci, norb, nelec, orbsym, wfnsym=0):
     neleca, nelecb = _unpack(nelec)
     strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
     strsb = numpy.asarray(cistring.gen_strings4orblist(range(norb), nelecb))
-    ci = ci.reshape(strsa.size,strsb.size)
-    airreps = numpy.zeros(strsa.size, dtype=numpy.int32)
-    birreps = numpy.zeros(strsb.size, dtype=numpy.int32)
-    for i in range(norb):
-        airreps[numpy.bitwise_and(strsa, 1<<i) > 0] ^= orbsym[i]
-        birreps[numpy.bitwise_and(strsb, 1<<i) > 0] ^= orbsym[i]
-    #print(airreps)
-    #print(birreps)
-    mask = (numpy.bitwise_xor(airreps.reshape(-1,1), birreps) == wfnsym)
-    ci1 = numpy.zeros_like(ci)
-    ci1[mask] = ci[mask]
-    return ci1 * (1/numpy.linalg.norm(ci1))
+    return _symmetrize_wfn(ci, strsa, strsb, orbsym, wfnsym)
 
+def _guess_wfnsym(ci, strsa, strsb, orbsym):
+    na = len(strsa)
+    nb = len(strsb)
+    if isinstance(ci, numpy.ndarray) and ci.ndim <= 2:
+        assert(ci.size == na*nb)
+        idx = numpy.argmax(ci)
+    else:
+        assert(ci[0].size == na*nb)
+        idx = ci[0].argmax()
+    stra = strsa[idx // nb]
+    strb = strsb[idx % nb ]
+
+    airrep = 0
+    birrep = 0
+    for i, ir in enumerate(orbsym):
+        if (stra & (1<<i)):
+            airrep ^= ir
+        if (strb & (1<<i)):
+            birrep ^= ir
+    return airrep ^ birrep
 def guess_wfnsym(ci, norb, nelec, orbsym):
     '''Guess the wavefunction symmetry based on the non-zero elements in the
     given CI coefficients.
@@ -225,25 +247,9 @@ def guess_wfnsym(ci, norb, nelec, orbsym):
         Irrep ID
     '''
     neleca, nelecb = _unpack(nelec)
-    na = cistring.num_strings(norb, neleca)
-    nb = cistring.num_strings(norb, nelecb)
-    if isinstance(ci, numpy.ndarray) and ci.ndim <= 2:
-        assert(ci.size == na*nb)
-        idx = numpy.argmax(ci)
-    else:
-        assert(ci[0].size == na*nb)
-        idx = ci[0].argmax()
-    stra = cistring.addr2str(norb, neleca, idx // nb)
-    strb = cistring.addr2str(norb, nelecb, idx % nb )
-
-    airrep = 0
-    birrep = 0
-    for i in range(norb):
-        if (stra & (1<<i)):
-            airrep ^= orbsym[i]
-        if (strb & (1<<i)):
-            birrep ^= orbsym[i]
-    return airrep ^ birrep
+    strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
+    strsb = numpy.asarray(cistring.gen_strings4orblist(range(norb), nelecb))
+    return _guess_wfnsym(ci, strsa, strsb, orbsym)
 
 
 def des_a(ci0, norb, neleca_nelecb, ap_id):
@@ -432,9 +438,9 @@ def reorder(ci, nelec, orbidxa, orbidxb=None):
     guide_stringsb = cistring.gen_strings4orblist(orbidxb, nelecb)
     old_det_idxa = numpy.argsort(guide_stringsa)
     old_det_idxb = numpy.argsort(guide_stringsb)
-    return pyscf.lib.take_2d(ci, old_det_idxa, old_det_idxb)
+    return lib.take_2d(ci, old_det_idxa, old_det_idxb)
 
-def overlap(string1, string2, norb, s=None):
+def det_overlap(string1, string2, norb, s=None):
     '''Determinants overlap on non-orthogonal one-particle basis'''
     if s is None:  # orthogonal basis with s_ij = delta_ij
         return string1 == string2
@@ -451,10 +457,21 @@ def overlap(string1, string2, norb, s=None):
             assert(bin(string2).count('1') == nelec)
         idx1 = [i for i in range(norb) if (1<<i & string1)]
         idx2 = [i for i in range(norb) if (1<<i & string2)]
-        s1 = pyscf.lib.take_2d(s, idx1, idx2)
+        s1 = lib.take_2d(s, idx1, idx2)
         return numpy.linalg.det(s1)
 
-def fix_spin_(fciobj, shift=.2, ss_value=None):
+def overlap(bra, ket, norb, nelec, s=None):
+    '''Overlap between two CI wavefunctions
+
+    Args:
+        s : 2D array or a list of 2D array
+            The overlap matrix of non-orthogonal one-particle basis
+    '''
+    if s is not None:
+        bra = transform_ci_for_orbital_rotation(bra, norb, nelec, s)
+    return numpy.dot(bra.ravel(), ket.ravel())
+
+def fix_spin_(fciobj, shift=.2, ss=None, **kwargs):
     r'''If FCI solver cannot stick on spin eigenfunction, modify the solver by
     adding a shift on spin square operator
 
@@ -468,7 +485,7 @@ def fix_spin_(fciobj, shift=.2, ss_value=None):
     Kwargs:
         shift : float
             Level shift for states which have different spin
-        ss_value : number
+        ss : number
             S^2 expection value == s*(s+1)
 
     Returns
@@ -476,7 +493,15 @@ def fix_spin_(fciobj, shift=.2, ss_value=None):
     '''
     from pyscf.fci import spin_op
     from pyscf.fci import direct_spin0
+    if 'ss_value' in kwargs:
+        sys.stderr.write('fix_spin_: kwarg "ss_value" will be removed in future release. '
+                         'It was replaced by "ss"\n')
+        ss_value = kwargs['ss_value']
+    else:
+        ss_value = ss
+
     fciobj.davidson_only = True
+    old_contract_2e = fciobj.contract_2e
     def contract_2e(eri, fcivec, norb, nelec, link_index=None, **kwargs):
         if isinstance(nelec, (int, numpy.number)):
             sz = (nelec % 2) * .5
@@ -487,41 +512,98 @@ def fix_spin_(fciobj, shift=.2, ss_value=None):
         else:
             ss = ss_value
 
-        ci0 = old_contract_2e(eri, fcivec, norb, nelec, link_index, **kwargs)
-        if ss == 0:
-            na = int(numpy.sqrt(fcivec.size))
-            ci0 = pyscf.lib.transpose_sum(ci0.reshape(na,na), inplace=True)
-            ci0 *= .5
-
         if ss < sz*(sz+1)+.1:
-# (S^2-ss_value)|Psi> to shift state other than the lowest state
-            ci1 = spin_op.contract_ss(fcivec, norb, nelec).reshape(fcivec.shape)
+# (S^2-ss)|Psi> to shift state other than the lowest state
+            ci1 = fciobj.contract_ss(fcivec, norb, nelec).reshape(fcivec.shape)
             ci1 -= ss * fcivec
         else:
-# (S^2-ss_value)^2|Psi> to shift states except the given spin.
+# (S^2-ss)^2|Psi> to shift states except the given spin.
 # It still relies on the quality of initial guess
-            tmp = spin_op.contract_ss(fcivec, norb, nelec).reshape(fcivec.shape)
+            tmp = fciobj.contract_ss(fcivec, norb, nelec).reshape(fcivec.shape)
             tmp -= ss * fcivec
             ci1 = -ss * tmp
-            ci1 += spin_op.contract_ss(tmp, norb, nelec).reshape(fcivec.shape)
+            ci1 += fciobj.contract_ss(tmp, norb, nelec).reshape(fcivec.shape)
             tmp = None
-
         ci1 *= shift
+
+        ci0 = old_contract_2e(eri, fcivec, norb, nelec, link_index, **kwargs)
         ci1 += ci0.reshape(fcivec.shape)
         return ci1
-    fciobj.contract_2e, old_contract_2e = contract_2e, fciobj.contract_2e
+    fciobj.contract_2e = contract_2e
     return fciobj
-def fix_spin(fciobj, shift=.1, ss_value=None):
-    return fix_spin_(copy.copy(fciobj), shift, ss_value)
+def fix_spin(fciobj, shift=.1, ss=None):
+    return fix_spin_(copy.copy(fciobj), shift, ss)
 
+def transform_ci_for_orbital_rotation(ci, norb, nelec, u):
+    '''Transform CI coefficients to the representation in new one-particle basis.
+    Solving CI problem for Hamiltonian h1, h2 defined in old basis,
+    CI_old = fci.kernel(h1, h2, ...)
+    Given orbital rotation u, the CI problem can be either solved by
+    transforming the Hamiltonian, or transforming the coefficients.
+    CI_new = fci.kernel(u^T*h1*u, ...) = transform_ci_for_orbital_rotation(CI_old, u)
 
-def _unpack(nelec):
-    if isinstance(nelec, (int, numpy.number)):
-        nelecb = nelec//2
-        neleca = nelec - nelecb
-        return neleca, nelecb
+    Args:
+        u : 2D array or a list of 2D array
+            the orbital rotation to transform the old one-particle basis to new
+            one-particle basis
+    '''
+    neleca, nelecb = _unpack(nelec)
+    strsa = numpy.asarray(cistring.gen_strings4orblist(range(norb), neleca))
+    strsb = numpy.asarray(cistring.gen_strings4orblist(range(norb), nelecb))
+    one_particle_strs = numpy.asarray([1<<i for i in range(norb)])
+    na = len(strsa)
+    nb = len(strsb)
+
+    if isinstance(u, numpy.ndarray) and u.ndim == 2:
+        ua = ub = u
     else:
-        return nelec
+        ua, ub = u
+
+    # Unitary transformation array trans_ci is the overlap between two sets of CI basis.
+    occ_masks = (strsa[:,None] & one_particle_strs) != 0
+    trans_ci_a = numpy.zeros((na,na))
+    #for i in range(na): # for old basis
+    #    for j in range(na):
+    #        uij = u[occ_masks[i]][:,occ_masks[j]]
+    #        trans_ci_a[i,j] = numpy.linalg.det(uij)
+    occ_idx_all_strs = numpy.where(occ_masks)[1]
+    for i in range(na):
+        ui = ua[occ_masks[i]].T.copy()
+        minors = numpy.take(ui, occ_idx_all_strs, axis=0).reshape(na,neleca,neleca)
+        trans_ci_a[i,:] = numpy.linalg.det(minors)
+
+    if neleca == nelecb and numpy.allclose(ua, ub):
+        trans_ci_b = trans_ci_a
+    else:
+        occ_masks = (strsb[:,None] & one_particle_strs) != 0
+        trans_ci_b = numpy.zeros((nb,nb))
+        #for i in range(nb):
+        #    for j in range(nb):
+        #        uij = u[occ_masks[i]][:,occ_masks[j]]
+        #        trans_ci_b[i,j] = numpy.linalg.det(uij)
+        occ_idx_all_strs = numpy.where(occ_masks)[1]
+        for i in range(nb):
+            ui = ub[occ_masks[i]].T.copy()
+            minors = numpy.take(ui, occ_idx_all_strs, axis=0).reshape(nb,nelecb,nelecb)
+            trans_ci_b[i,:] = numpy.linalg.det(minors)
+
+    # Transform old basis to new basis for all alpha-electron excitations
+    ci = lib.dot(trans_ci_a.T, ci.reshape(na,nb))
+    # Transform old basis to new basis for all beta-electron excitations
+    ci = lib.dot(ci.reshape(na,nb), trans_ci_b)
+    return ci
+
+
+def _unpack(nelec, spin=None):
+    if spin is None:
+        spin = 0
+    else:
+        nelec = int(numpy.sum(nelec))
+    if isinstance(nelec, (int, numpy.number)):
+        nelecb = (nelec-spin)//2
+        neleca = nelec - nelecb
+        nelec = neleca, nelecb
+    return nelec
 
 
 if __name__ == '__main__':
@@ -579,4 +661,13 @@ if __name__ == '__main__':
     s1 = numpy.random.seed(1)
     s1 = numpy.random.random((6,6))
     s1 = s1 + s1.T
-    print(overlap(int('0b10011',2), int('0b011010',2), 6, s1) - -0.273996425116)
+    print(det_overlap(int('0b10011',2), int('0b011010',2), 6, s1) - -0.273996425116)
+    numpy.random.seed(12)
+    s = numpy.random.random((6,6))
+    s = s.dot(s.T) / 3
+    bra = numpy.random.random((15,15))
+    ket = numpy.random.random((15,15))
+    bra /= numpy.linalg.norm(bra)
+    ket /= numpy.linalg.norm(ket)
+    print(overlap(bra, ket, 6, 4), overlap(bra, ket, 6, 4, (s,s)),0.025906419720918766)
+

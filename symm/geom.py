@@ -2,13 +2,33 @@
 #
 # Author: Qiming Sun <osirpt.sun@gmail.com>
 #
+#
+# The symmetry detection method implemented here is not strictly follow the
+# point group detection flowchart.  The detection is based on the degeneracy
+# of cartesian basis of multipole momentum, eg
+# http://symmetry.jacobs-university.de/cgi-bin/group.cgi?group=604&option=4
+# see the column of "linear functions, quadratic functions and cubic functions".
+#
+# Different point groups have different combinations of degeneracy for each
+# type of cartesian functions.  Based on the degeneracy of cartesian function
+# basis, one can quickly filter out a few candidates of point groups for the
+# given molecule.  Regular operations (rotation, mirror etc) can be applied
+# next to identify the symmetry.  Current implementation only checks the
+# rotation functions and it's roughly enough for D2h and subgroups.
+# 
+# There are special cases this detection method may break down, eg two H8 cube
+# molecules sitting on the same center but with random orientation.  The
+# system is in C1 while this detection method gives O group because the
+# 3 rotation bases are degenerated.  In this case, the code use the regular
+# method (point group detection flowchart) to detect the point group.
+#
 
 import sys
 import re
 import numpy
 import scipy.linalg
-import pyscf.lib
 from pyscf.gto import mole
+from pyscf.lib import norm
 from pyscf.lib import logger
 import pyscf.symm.param
 
@@ -445,7 +465,7 @@ class SymmSys(object):
         for index in self.atomtypes.values():
             index = numpy.asarray(index)
             c = self.atoms[index,1:]
-            dists = numpy.around(pyscf.lib.norm(c, axis=1), decimals)
+            dists = numpy.around(norm(c, axis=1), decimals)
             u, idx = numpy.unique(dists, return_inverse=True)
             for i, s in enumerate(u):
                 self.group_atoms_by_distance.append(index[idx == i])
@@ -494,7 +514,7 @@ class SymmSys(object):
 
 # atoms of equal distances may be associated with rotation axis > C2.
                 r0 = coords - coords[0]
-                distance = pyscf.lib.norm(r0, axis=1)
+                distance = norm(r0, axis=1)
                 eq_distance = abs(distance[:,None] - distance) < TOLERANCE
                 for i in range(2, natm):
                     for j in numpy.where(eq_distance[i,:i])[0]:
@@ -507,7 +527,7 @@ class SymmSys(object):
 
         # remove zero-vectors and duplicated vectors
         vecs = numpy.vstack([x[0] for x in maybe_cn])
-        idx = pyscf.lib.norm(vecs, axis=1) > TOLERANCE
+        idx = norm(vecs, axis=1) > TOLERANCE
         ns = numpy.hstack([x[1] for x in maybe_cn])
         vecs = _normalize(vecs[idx])
         ns = ns[idx]
@@ -563,7 +583,7 @@ class SymmSys(object):
                             maybe_c2x.append(r2-r1)
 
                 if len(maybe_c2x) > 0:
-                    idx = pyscf.lib.norm(maybe_c2x, axis=1) > TOLERANCE
+                    idx = norm(maybe_c2x, axis=1) > TOLERANCE
                     maybe_c2x = _normalize(maybe_c2x)[idx]
                     maybe_c2x = _remove_dupvec(maybe_c2x)
                     for c2x in maybe_c2x:
@@ -608,7 +628,7 @@ def _normalize(vecs):
     if vecs.ndim == 1:
         return vecs / (numpy.linalg.norm(vecs) + 1e-200)
     else:
-        return vecs / (pyscf.lib.norm(vecs, axis=1).reshape(-1,1) + 1e-200)
+        return vecs / (norm(vecs, axis=1).reshape(-1,1) + 1e-200)
 
 def _vec_in_vecs(vec, vecs):
     norm = numpy.sqrt(len(vecs))

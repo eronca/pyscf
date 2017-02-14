@@ -3,9 +3,10 @@ PySCF
 
 Python module for quantum chemistry
 
-2016-09-14
+2017-01-04
 
-* [1.2 beta](../master/doc/whatsnew/1.2.rst) [Stable release 1.1](https://github.com/sunqm/pyscf/tree/1.1)
+* [1.3 alpha](https://github.com/sunqm/pyscf/tree/dev)
+* [Stable release 1.2.1](https://github.com/sunqm/pyscf/tree/1.2.1)
 * [Changelog](../master/CHANGELOG)
 * [Documentation](http://www.pyscf.org) ([PDF](http://www.sunqm.net/pyscf/files/pdf/PySCF-1.1.pdf))
 * [Installation](#installation)
@@ -20,7 +21,7 @@ Installation
     - Python 2.6, 2.7, 3.2, 3.3, 3.4
     - Numpy 1.8.0 or higher
     - Scipy 0.10 or higher (0.12.0 or higher for python 3.3, 3.4)
-    - h5py 2.2.0 or higher (requires HDF5 1.8.4 or higher)
+    - h5py 2.3.0 or higher (requires HDF5 1.8.4 or higher)
 
 * Compile core module
 
@@ -32,14 +33,14 @@ Installation
 * To make python be able to find pyscf, edit environment variable
   `PYTHONPATH`, e.g.  if pyscf is installed in /opt/pyscf
 
-        export PYTHONPATH=/opt:$PYTHONPATH
+        export PYTHONPATH=/opt/pyscf:$PYTHONPATH
 
 * Use Intel MKL as BLAS library.  cmake with options
   `-DBLA_VENDOR=Intel10_64lp_seq`
 
         cmake -DBLA_VENDOR=Intel10_64lp_seq ..
 
-  If cmake is still not able to find MKL, just define BLAS_LIBRARIES in CMakeLists.txt
+  If cmake does not find MKL, you can define BLAS_LIBRARIES in CMakeLists.txt
 
         set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_intel_lp64.so")
         set(BLAS_LIBRARIES "${BLAS_LIBRARIES};/path/to/mkl/lib/intel64/libmkl_sequential.so")
@@ -84,11 +85,15 @@ Known problems
   Reason: unsafe use of relative rpath libcint.2.8.dylib in xxx/pyscf/lib/libao2mo.dylib with restricted binary
 ```
 
-  It is observed on OSX 10.11.  One solution is to manually modify the relative path to absolute path
-  $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libcgto.dylib
-  $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libcvhf.dylib
-  $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libao2mo.dylib
-  ...
+  It is only observed on OSX 10.11.  One solution is to manually modify the relative path to absolute path
+
+        $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libcgto.dylib
+        $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libcvhf.dylib
+        $ install_name_tool -change libcint.2.8.dylib xxx/pyscf/lib/deps/lib/libcint.2.8.dylib xxx/pyscf/lib/libao2mo.dylib
+        ...
+
+  Running script pyscf/lib/_runme_to_fix_dylib_osx10.11.sh  can patch
+  all required dylib files.
 
 
 * Fails at runtime with error message
@@ -101,7 +106,7 @@ Known problems
   You need either change to other MKL version (10.*, 11.0, 11.2) or
   disable mkl_avx:
 
-        BLA_VENDOR=Intel10_64lp_seq cmake .. -DDISABLE_AVX=1
+        cmake -DBLA_VENDOR=Intel10_64lp_seq .. -DDISABLE_AVX=1
 
 
 * Runtime error message
@@ -111,18 +116,22 @@ Known problems
   This is MKL 11.* bug for "dlopen" function.  Preloading the two libraries
   works fine with most system:
 
+```
   export LD_PRELOAD=$MKLROOT/lib/intel64/libmkl_def.so:$MKLROOT/lib/intel64/libmkl_core.so
+```
 
   or 
 
+```
   export LD_PRELOAD=$MKLROOT/lib/intel64/libmkl_avx.so:$MKLROOT/lib/intel64/libmkl_core.so:$MKLROOT/lib/intel64/libmkl_sequential.so
+```
 
 
 * h5py installation.
   If you got problems to install the latest h5py package,  you can try
   the old releases:
   https://www.hdfgroup.org/ftp/HDF5/releases/hdf5-1.8.12/
-  https://github.com/h5py/h5py/archive/2.2.1.tar.gz
+  https://github.com/h5py/h5py/archive/2.3.1.tar.gz
 
 
 

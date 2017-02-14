@@ -6,29 +6,9 @@
 import numpy as np
 import pyscf.lib
 from pyscf.lib import logger
-from pyscf.lib.numpy_helper import cartesian_prod
 from pyscf import dft
 from pyscf.pbc import tools
-
-
-def gen_uniform_grids(cell, gs=None):
-    '''Generate a uniform real-space grid consistent w/ samp thm; see MH (3.19).
-
-    Args:
-        cell : instance of :class:`Cell`
-
-    Returns:
-        coords : (ngx*ngy*ngz, 3) ndarray
-            The real-space grid point coordinates.
-
-    '''
-    if gs is None:
-        gs = cell.gs
-    ngs = 2*np.asarray(gs)+1
-    qv = cartesian_prod([np.arange(x) for x in ngs])
-    invN = np.diag(1./ngs)
-    coords = np.dot(qv, np.dot(cell._h, invN).T)
-    return coords
+from pyscf.pbc.gto.cell import gen_uniform_grids
 
 
 class UniformGrids(object):
@@ -74,14 +54,14 @@ def gen_becke_grids(cell, atom_grid={}, radi_method=dft.radi.gauss_chebyshev,
             The real-space grid point coordinates.
         weights : (ngx*ngy*ngz) ndarray
     '''
-    scell = tools.pbc.cell_plus_imgs(cell, [min(x,2) for x in cell.nimgs])
+    scell = tools.pbc.cell_plus_imgs(cell, cell.nimgs)
     coords = scell.atom_coords()
 # Generating grids for the entire super cell is slow.  We don't need generate
 # grids for the super cell because out of certain region the weights obtained
 # from Becke partitioning are no longer important.  The region is controlled
 # by r_cutoff
-    #r_cutoff = pyscf.lib.norm(pyscf.lib.norm(cell._h, axis=1))
-    r_cutoff = max(pyscf.lib.norm(cell._h, axis=1)) * 1.25
+    #r_cutoff = pyscf.lib.norm(pyscf.lib.norm(cell.lattice_vectors(), axis=0))
+    r_cutoff = max(pyscf.lib.norm(cell.lattice_vectors(), axis=0)) * 1.25
 # Filter important atoms. Atoms close to the unicell if they are close to any
 # of the atoms in the unit cell
     mask = np.zeros(scell.natm, dtype=bool)
@@ -98,9 +78,8 @@ def gen_becke_grids(cell, atom_grid={}, radi_method=dft.radi.gauss_chebyshev,
     coords, weights = dft.gen_grid.gen_partition(scell, atom_grids_tab)
 
     # search for grids in unit cell
-    #b1,b2,b3 = np.linalg.inv(h)  # reciprocal lattice
-    #np.einsum('kj,ij->ki', coords, (b1,b2,b3))
-    c = np.dot(coords, np.linalg.inv(cell._h.T))
+    b = cell.reciprocal_vectors(norm_to=1)
+    c = np.dot(coords, b.T)
     mask = ((c[:,0]>=0) & (c[:,1]>=0) & (c[:,2]>=0) &
             (c[:,0]< 1) & (c[:,1]< 1) & (c[:,2]< 1))
     return coords[mask], weights[mask]
@@ -129,7 +108,7 @@ if __name__ == '__main__':
 
     n = 3
     cell = pgto.Cell()
-    cell.h = '''
+    cell.a = '''
     4   0   0
     0   4   0
     0   0   4
@@ -142,5 +121,5 @@ if __name__ == '__main__':
     cell.build()
     g = BeckeGrids(cell)
     g.build()
-    print g.weights.sum()
-    print cell.vol
+    print(g.weights.sum())
+    print(cell.vol)

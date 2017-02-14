@@ -15,7 +15,7 @@ import sys
 import struct
 import time
 import tempfile
-from subprocess import check_call, CalledProcessError
+from subprocess import check_call, check_output, STDOUT, CalledProcessError
 import numpy
 import pyscf.tools
 import pyscf.lib
@@ -126,6 +126,7 @@ class DMRGCI(pyscf.lib.StreamObject):
         self.scheduleTols   = []
         self.scheduleNoises = []
         self.onlywriteIntegral = False
+        self.spin = 0
 
         self.orbsym = []
         if mol.symmetry:
@@ -193,6 +194,10 @@ class DMRGCI(pyscf.lib.StreamObject):
             verbose = self.verbose
         log = logger.Logger(self.stdout, verbose)
         log.info('******** Block flags ********')
+        log.info('executable = %s', self.executable)
+        log.info('Block version %s', block_version(self.executable))
+        log.info('BLOCKEXE_COMPRESS_NEVPT = %s', settings.BLOCKEXE_COMPRESS_NEVPT)
+        log.info('mpiprefix = %s', self.mpiprefix)
         log.info('scratchDirectory = %s', self.scratchDirectory)
         log.info('integralFile = %s', os.path.join(self.runtimeDir, self.integralFile))
         log.info('configFile = %s', os.path.join(self.runtimeDir, self.configFile))
@@ -209,10 +214,25 @@ class DMRGCI(pyscf.lib.StreamObject):
         log.info('dmrg switch tol =%s', self.dmrg_switch_tol)
         log.info('wfnsym = %s', self.wfnsym)
         log.info('num_thrds = %d', self.num_thrds)
+        log.info('memory = %s', self.memory)
         return self
 
+    def make_rdm1s(self, state, norb, nelec, link_index=None, **kwargs):
+# Ref: IJQC, 109, 3552 Eq (3)
+        if isinstance(nelec, (int, numpy.integer)):
+            nelecb = (nelec-self.spin) // 2
+            neleca = nelec - nelecb
+        else :
+            neleca, nelecb = nelec
+        dm1, dm2 = DMRGCI.make_rdm12(self, state, norb, nelec, link_index, **kwargs)
+        dm1n = (2-(neleca+nelecb)/2.) * dm1 - numpy.einsum('pkkq->pq', dm2)
+        dm1n *= 1./(neleca-nelecb+1)
+        dm1a, dm1b = (dm1+dm1n)*.5, (dm1-dm1n)*.5
+        return dm1a, dm1b
+
     def make_rdm1(self, state, norb, nelec, link_index=None, **kwargs):
-        return self.make_rdm12(state, norb, nelec, link_index, **kwargs)[0]
+# Avoid calling self.make_rdm12 because it may be overloaded
+        return DMRGCI.make_rdm12(self, state, norb, nelec, link_index, **kwargs)[0]
 
     def make_rdm12(self, state, norb, nelec, link_index=None, **kwargs):
         nelectrons = 0
@@ -236,8 +256,21 @@ class DMRGCI(pyscf.lib.StreamObject):
         onepdm /= (nelectrons-1)
         return onepdm, twopdm
 
+    def trans_rdm1s(self, statebra, stateket, norb, nelec, link_index=None, **kwargs):
+# Ref: IJQC, 109, 3552 Eq (3)
+        if isinstance(nelec, (int, numpy.integer)):
+            nelecb = (nelec-self.spin) // 2
+            neleca = nelec - nelecb
+        else :
+            neleca, nelecb = nelec
+        dm1, dm2 = DMRGCI.trans_rdm12(self, statebra, stateket, norb, nelec, link_index, **kwargs)
+        dm1n = (2-(neleca+nelecb)/2.) * dm1 - numpy.einsum('pkkq->pq', dm2)
+        dm1n *= 1./(neleca-nelecb+1)
+        dm1a, dm1b = (dm1+dm1n)*.5, (dm1-dm1n)*.5
+        return dm1a, dm1b
+
     def trans_rdm1(self, statebra, stateket, norb, nelec, link_index=None, **kwargs):
-        return self.trans_rdm12(statebra, stateket, norb, nelec, link_index, **kwargs)[0]
+        return DMRGCI.trans_rdm12(self, statebra, stateket, norb, nelec, link_index, **kwargs)[0]
 
     def trans_rdm12(self, statebra, stateket, norb, nelec, link_index=None, **kwargs):
         nelectrons = 0
@@ -350,15 +383,15 @@ class DMRGCI(pyscf.lib.StreamObject):
             nelectrons = nelec[0]+nelec[1]
 
         if (filetype == "binary") :
-            fname = os.path.join('%s/%s/'%(self.scratchDirectory,"node0"), "spatial_threepdm.%d.%d.bin" %(state, state))
-            fnameout = os.path.join('%s/%s/'%(self.scratchDirectory,"node0"), "spatial_threepdm.%d.%d.bin.unpack" %(state, state))
+            fname = os.path.join(self.scratchDirectory,"node0", "spatial_threepdm.%d.%d.bin" %(state, state))
+            fnameout = os.path.join(self.scratchDirectory,"node0", "spatial_threepdm.%d.%d.bin.unpack" %(state, state))
             libE3unpack.unpackE3(ctypes.c_char_p(fname), ctypes.c_char_p(fnameout), ctypes.c_int(norb))
 
             E3 = numpy.fromfile(fnameout, dtype=numpy.dtype('Float64'))
             E3 = numpy.reshape(E3, (norb, norb, norb, norb, norb, norb), order='F')
             
         else :
-            fname = os.path.join('%s/%s/'%(self.scratchDirectory,"node0"), "spatial_threepdm.%d.%d.txt" %(state, state))
+            fname = os.path.join(self.scratchDirectory,"node0", "spatial_threepdm.%d.%d.txt" %(state, state))
             f = open(fname, 'r')
             lines = f.readlines()
             E3 = numpy.zeros(shape=(norb, norb, norb, norb, norb, norb), dtype=dt)
@@ -410,7 +443,7 @@ class DMRGCI(pyscf.lib.StreamObject):
 
         return a16
 
-    def kernel(self, h1e, eri, norb, nelec, fciRestart=None, **kwargs):
+    def kernel(self, h1e, eri, norb, nelec, fciRestart=None, ecore=0, **kwargs):
         if self.nroots == 1:
             roots = 0
         else:
@@ -418,7 +451,9 @@ class DMRGCI(pyscf.lib.StreamObject):
         if fciRestart is None:
             fciRestart = self.restart or self._restart
 
-        writeIntegralFile(self, h1e, eri, norb, nelec)
+        if 'orbsym' in kwargs:
+            self.orbsym = kwargs['orbsym']
+        writeIntegralFile(self, h1e, eri, norb, nelec, ecore)
         writeDMRGConfFile(self, nelec, fciRestart)
         if self.verbose >= logger.DEBUG1:
             inFile = os.path.join(self.runtimeDir, self.configFile)
@@ -443,10 +478,12 @@ class DMRGCI(pyscf.lib.StreamObject):
 
         return calc_e, roots
 
-    def approx_kernel(self, h1e, eri, norb, nelec, fciRestart=None, **kwargs):
+    def approx_kernel(self, h1e, eri, norb, nelec, fciRestart=None, ecore=0, **kwargs):
         fciRestart = True
 
-        writeIntegralFile(self, h1e, eri, norb, nelec)
+        if 'orbsym' in kwargs:
+            self.orbsym = kwargs['orbsym']
+        writeIntegralFile(self, h1e, eri, norb, nelec, ecore)
         writeDMRGConfFile(self, nelec, fciRestart, self.approx_maxIter)
         if self.verbose >= logger.DEBUG1:
             inFile = os.path.join(self.runtimeDir, self.configFile)
@@ -473,6 +510,19 @@ class DMRGCI(pyscf.lib.StreamObject):
                 self._restart = False
         return callback
 
+    def spin_square(self, civec, norb, nelec):
+        if isinstance(nelec, (int, numpy.integer)):
+            nelecb = nelec//2
+            neleca = nelec - nelecb
+        else :
+            neleca, nelecb = nelec
+        s = (neleca - nelecb) * .5
+        ss = s * (s+1)
+        if isinstance(civec, int):
+            return ss, s*2+1
+        else:
+            return [ss]*len(civec), [s*2+1]*len(civec)
+
 
 def make_schedule(sweeps, Ms, tols, noises, twodot_to_onedot):
     if len(sweeps) == len(Ms) == len(tols) == len(noises):
@@ -493,12 +543,9 @@ def writeDMRGConfFile(DMRGCI, nelec, Restart,
 
     f = open(confFile, 'w')
 
-    if (DMRGCI.memory is not None):
-        f.write('memory, %i, g\n'%(DMRGCI.memory))
-
     if isinstance(nelec, (int, numpy.integer)):
-        neleca = nelec//2 + nelec%2
-        nelecb = nelec - neleca
+        nelecb = (nelec-DMRGCI.spin) // 2
+        neleca = nelec - nelecb
     else :
         neleca, nelecb = nelec
     f.write('nelec %i\n'%(neleca+nelecb))
@@ -562,26 +609,30 @@ def writeDMRGConfFile(DMRGCI, nelec, Restart,
             f.write('%f '%weight)
         f.write('\n')
 
-    if DMRGCI.num_thrds > 1: # Add condition for backward compatiblity
-        f.write('num_thrds %d\n'%DMRGCI.num_thrds)
-    for line in DMRGCI.extraline:
-        f.write('%s\n'%line)
-    for line in DMRGCI.block_extra_keyword:
-        f.write('%s\n'%line)
-    for line in extraline:
-        f.write('%s\n'%line)
+    block_extra_keyword = DMRGCI.extraline + DMRGCI.block_extra_keyword + extraline
+    if block_version(DMRGCI.executable).startswith('1.1'):
+        for line in block_extra_keyword:
+            if not ('num_thrds' in line or 'memory' in line):
+                f.write('%s\n'%line)
+    else:
+        if DMRGCI.memory is not None:
+            f.write('memory, %i, g\n'%(DMRGCI.memory))
+        if DMRGCI.num_thrds > 1:
+            f.write('num_thrds %d\n'%DMRGCI.num_thrds)
+        for line in block_extra_keyword:
+            f.write('%s\n'%line)
     f.close()
     #no reorder
     #f.write('noreorder\n')
 
-def writeIntegralFile(DMRGCI, h1eff, eri_cas, ncas, nelec):
+def writeIntegralFile(DMRGCI, h1eff, eri_cas, ncas, nelec, ecore=0):
     if isinstance(nelec, (int, numpy.integer)):
         neleca = nelec//2 + nelec%2
         nelecb = nelec - neleca
     else :
         neleca, nelecb = nelec
     integralFile = os.path.join(DMRGCI.runtimeDir, DMRGCI.integralFile)
-    if DMRGCI.groupname is not None and DMRGCI.orbsym:
+    if DMRGCI.groupname is not None and DMRGCI.orbsym is not []:
         orbsym = dmrg_sym.convert_orbsym(DMRGCI.groupname, DMRGCI.orbsym)
     else:
         orbsym = []
@@ -590,7 +641,7 @@ def writeIntegralFile(DMRGCI, h1eff, eri_cas, ncas, nelec):
 
     eri_cas = pyscf.ao2mo.restore(8, eri_cas, ncas)
     pyscf.tools.fcidump.from_integrals(integralFile, h1eff, eri_cas, ncas,
-                                       neleca+nelecb, ms=abs(neleca-nelecb),
+                                       neleca+nelecb, ecore, ms=abs(neleca-nelecb),
                                        orbsym=orbsym)
 
 
@@ -604,6 +655,7 @@ def executeBLOCK(DMRGCI):
         check_call(cmd, shell=True)
     except CalledProcessError as err:
         logger.error(DMRGCI, cmd)
+        DMRGCI.stdout.write(check_output(['tail', '-100', outFile]))
         raise err
 
 def readEnergy(DMRGCI):
@@ -637,8 +689,44 @@ def DMRGSCF(mf, norb, nelec, maxM=1000, tol=1.e-8, *args, **kwargs):
     if mc.chkfile == mc._scf._chkfile.name:
         # Do not delete chkfile after mcscf
         mc.chkfile = tempfile.mktemp(dir=settings.BLOCKSCRATCHDIR)
+        if not os.path.exists(settings.BLOCKSCRATCHDIR):
+            os.makedirs(settings.BLOCKSCRATCHDIR)
     return mc
 
+
+def dryrun(mc, mo_coeff=None):
+    '''Generate FCIDUMP and dmrg config file'''
+    if mo_coeff is None:
+        mo_coeff = mc.mo_coeff
+    mc.fcisolver.onlywriteIntegral, bak = True, mc.fcisolver.onlywriteIntegral
+    mc.casci(mo_coeff)
+    mc.fcisolver.onlywriteIntegral = bak
+
+def block_version(blockexe):
+    try:
+        msg = check_output([blockexe, '-v'])
+        version = '1.1.0'
+        for line in msg.split('\n'):
+            if line.startswith('Block '):
+                version = line.split()[1]
+                break
+        return version
+    except CalledProcessError:
+        f1 = tempfile.NamedTemporaryFile()
+        f1.write('memory 1 m\n')
+        f1.flush()
+        try:
+            msg = check_output([blockexe, f1.name], stderr=STDOUT)
+        except CalledProcessError as err:
+            if 'Unrecognized option :: memory' in err.output:
+                version = '1.1.1'
+            elif 'need to specify hf_occ' in err.output:
+                version = '1.5'
+            else:
+                sys.stderr.write(err.output)
+                raise err
+        f1.close()
+        return version
 
 
 if __name__ == '__main__':

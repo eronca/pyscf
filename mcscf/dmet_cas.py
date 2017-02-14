@@ -8,26 +8,77 @@ import numpy
 import scipy.linalg
 from pyscf.lib import logger
 from pyscf.tools import dump_mat
+from pyscf import scf
 
-def guess_cas(mf, dm, baslst, nelec_tol=.05, occ_cutoff=1e-6, base=0,
-              orth_method='meta_lowdin', s=None, verbose=None):
-    '''Using DMET to produce CASSCF initial guess.  Return the active space
-    size, num active electrons and the orbital initial guess.
+def kernel(mf, dm, aolabels_or_baslst, nelec_tol=.05, occ_cutoff=1e-6, base=0,
+           orth_method='meta_lowdin', s=None, canonicalize=True,
+           freeze_imp=False, verbose=None):
+    '''DMET method to generate CASSCF initial guess.
+    Ref. arXiv:1701.07862 [physics.chem-ph]
+
+    Args:
+        mf : an :class:`SCF` object
+
+        dm : 2D np.array or a list of 2D array
+            Density matrix
+        aolabels_or_baslst : string or a list of strings or a list of index
+            AO labels or indices
+
+    Kwargs:
+        nelec_tol : float
+            Entanglement threshold of DMET bath.  If the occupancy of an
+            orbital is less than nelec_tol, the orbital is considered as bath
+            orbtial.  If occ is greater than (1-nelec_tol), the orbitals are
+            taken for core determinant.
+        base : int
+            0-based (C-style) or 1-based (Fortran-style) for baslst if baslst
+            is index list
+        orth_method : str
+            It can be one of 'lowdin' and 'meta_lowdin'
+        s : 2D array
+            AO overlap matrix.  This option is mainly used for custom Hamilatonian.
+        canonicalize : bool
+            Orbitals defined in AVAS method are local orbitals.  Symmetrizing
+            the core, active and virtual space.
+
+    Returns:
+        active-space-size, #-active-electrons, orbital-initial-guess-for-CASCI/CASSCF
+
+    Examples:
+
+    >>> from pyscf import gto, scf, mcscf
+    >>> from pyscf.mcscf import dmet_cas
+    >>> mol = gto.M(atom='Cr 0 0 0; Cr 0 0 1.6', basis='ccpvtz')
+    >>> mf = scf.RHF(mol).run()
+    >>> ncas, nelecas, mo = dmet_cas.dmet_cas(mf, ['Cr 3d', 'Cr 4s'])
+    >>> mc = mcscf.CASSCF(mf, ncas, nelecas).run(mo)
     '''
     from pyscf import lo
-    mol = mf.mol
     if isinstance(verbose, logger.Logger):
         log = verbose
     elif verbose is not None:
-        log = logger.Logger(mol.stdout, verbose)
+        log = logger.Logger(mf.stdout, verbose)
     else:
-        log = logger.Logger(mol.stdout, mol.verbose)
+        log = logger.Logger(mf.stdout, mf.verbose)
     if not (isinstance(dm, numpy.ndarray) and dm.ndim == 2): # ROHF/UHF DM
         dm = sum(dm)
+    mol = mf.mol
+    if isinstance(aolabels_or_baslst, str):
+        baslst = [i for i,t in enumerate(mol.spherical_labels(1))
+                  if aolabels_or_baslst in t]
+    elif isinstance(aolabels_or_baslst[0], str):
+        baslst = [i for i,t in enumerate(mol.spherical_labels(1))
+                  if any(x in t for x in aolabels_or_baslst)]
+    else:
+        baslst = aolabels_or_baslst
+    baslst = numpy.asarray(baslst)
     if base != 0:
         baslst = [i-base for i in baslst]
     if s is None:
         s = mf.get_ovlp()
+
+    if (not isinstance(mf, scf.hf.SCF)) and hasattr(mf, '_scf'):
+        mf = mf._scf
 
     nao = dm.shape[0]
     nimp = len(baslst)
@@ -73,16 +124,18 @@ def guess_cas(mf, dm, baslst, nelec_tol=.05, occ_cutoff=1e-6, base=0,
     log.info('From DMET guess, ncas = %d  nelecas = %d  ncore = %d',
              ncas, nelecas, ncore)
 
-    if log.verbose >= logger.DEBUG:
-        log.debug('DMET impurity and bath orbitals on orthogonal AOs')
-        log.debug('DMET %d impurity sites/occ', nimp)
-        label = mol.spheric_labels(True)
+    log.debug('DMET impurity and bath orbitals on orthogonal AOs')
+    log.debug('DMET %d impurity sites/occ', nimp)
+    if log.verbose >= logger.DEBUG1:
+        label = mol.spherical_labels(True)
         occ_label = ['#%d/%.5f'%(i+1,x) for i,x in enumerate(occi)]
         #dump_mat.dump_rec(mol.stdout, numpy.dot(corth[:,baslst], ui),
         #                  label=label, label2=occ_label, start=1)
         dump_mat.dump_rec(mol.stdout, ui, label=[label[i] for i in baslst],
                           label2=occ_label, start=1)
-        log.debug('DMET %d entangled baths/occ', nb)
+
+    log.debug('DMET %d entangled baths/occ', nb)
+    if log.verbose >= logger.DEBUG1:
         occ_label = ['#%d/%.5f'%(i+1,occb[i]) for i in range(nb)]
         #dump_mat.dump_rec(mol.stdout, numpy.dot(corth[:,notimp], ub[:,:nb]),
         #                  label=label, label2=occ_label, start=1)
@@ -97,50 +150,92 @@ def guess_cas(mf, dm, baslst, nelec_tol=.05, occ_cutoff=1e-6, base=0,
     mocas = numpy.hstack((numpy.dot(corth[:,baslst],ui), mob))
     movir = mo_env[:,ncore:]
 
-    def search_for_degeneracy(e):
-        idx = numpy.where(abs(e[1:] - e[:-1]) < 1e-6)[0]
-        return numpy.unique(numpy.hstack((idx, idx+1)))
-    def symmetrize(e, c):
-        if mol.symmetry:
-            degidx = search_for_degeneracy(e)
-            log.debug1('degidx %s', degidx)
-            if degidx.size > 0:
-                esub = e[degidx]
-                csub = c[:,degidx]
-                scsub = numpy.dot(s, csub)
-                emin = abs(esub).min() * .5
-                es = []
-                cs = []
-                for i,ir in enumerate(mol.irrep_id):
-                    so = mol.symm_orb[i]
-                    sosc = numpy.dot(so.T, scsub)
-                    s_ir = reduce(numpy.dot, (so.T, s, so))
-                    fock_ir = numpy.dot(sosc*esub, sosc.T)
-                    e, u = scipy.linalg.eigh(fock_ir, s_ir)
-                    idx = abs(e) > emin
-                    es.append(e[idx])
-                    cs.append(numpy.dot(mol.symm_orb[i], u[:,idx]))
-                es = numpy.hstack(es)
-                idx = numpy.argsort(es)
-                assert(numpy.allclose(es[idx], esub))
-                c[:,degidx] = numpy.hstack(cs)[:,idx]
-        return c
-    if mf.mo_energy is None or mf.mo_coeff is None:
-        fock = mf.get_hcore()
-    else:
-        if isinstance(mf.mo_coeff, numpy.ndarray) and mf.mo_coeff.ndim == 2:
-            sc = numpy.dot(s, mf.mo_coeff)
-            fock = numpy.dot(sc*mf.mo_energy, sc.T)
+    if canonicalize or freeze_imp:
+        if mf.mo_energy is None or mf.mo_coeff is None:
+            fock = mf.get_hcore()
         else:
-            sc = numpy.dot(s, mf.mo_coeff[0])
-            fock = numpy.dot(sc*mf.mo_energy[0], sc.T)
-    mo = []
-    for c in (mocore, mocas, movir):
-        f1 = reduce(numpy.dot, (c.T, fock, c))
-        e, u = scipy.linalg.eigh(f1)
-        log.debug1('Fock eig %s', e)
-        mo.append(symmetrize(e, numpy.dot(c, u)))
-    mo = numpy.hstack(mo)
+            if isinstance(mf.mo_coeff, numpy.ndarray) and mf.mo_coeff.ndim == 2:
+                sc = numpy.dot(s, mf.mo_coeff)
+                fock = numpy.dot(sc*mf.mo_energy, sc.T)
+            else:
+                sc = numpy.dot(s, mf.mo_coeff[0])
+                fock = numpy.dot(sc*mf.mo_energy[0], sc.T)
+
+        def trans(c):
+            if c.shape[1] == 0:
+                return c
+            else:
+                f1 = reduce(numpy.dot, (c.T, fock, c))
+                e, u = scipy.linalg.eigh(f1)
+                log.debug1('Fock eig %s', e)
+                return symmetrize(mol, e, numpy.dot(c, u), s, log)
+
+        if freeze_imp:
+            log.debug('Semi-canonicalization for freeze_imp=True')
+            mo = numpy.hstack([trans(mocore), trans(mocas[:,:nimp]),
+                               trans(mocas[:,nimp:]), trans(movir)])
+        else:
+            mo = numpy.hstack([trans(mocore), trans(mocas), trans(movir)])
+    else:
+        mo = numpy.hstack((mocore, mocas, movir))
 
     return ncas, nelecas, mo
+dmet_cas = guess_cas = kernel
+
+
+def search_for_degeneracy(e):
+    idx = numpy.where(abs(e[1:] - e[:-1]) < 1e-3)[0]
+    return numpy.unique(numpy.hstack((idx, idx+1)))
+
+def symmetrize(mol, e, c, s, log):
+    if mol.symmetry:
+        degidx = search_for_degeneracy(e)
+        log.debug1('degidx %s', degidx)
+        if degidx.size > 0:
+            esub = e[degidx]
+            csub = c[:,degidx]
+            scsub = numpy.dot(s, csub)
+            emin = abs(esub).min() * .5
+            es = []
+            cs = []
+            for i,ir in enumerate(mol.irrep_id):
+                so = mol.symm_orb[i]
+                sosc = numpy.dot(so.T, scsub)
+                s_ir = reduce(numpy.dot, (so.T, s, so))
+                fock_ir = numpy.dot(sosc*esub, sosc.T)
+                e, u = scipy.linalg.eigh(fock_ir, s_ir)
+                idx = abs(e) > emin
+                es.append(e[idx])
+                cs.append(numpy.dot(mol.symm_orb[i], u[:,idx]))
+            es = numpy.hstack(es)
+            idx = numpy.argsort(es)
+            assert(numpy.allclose(es[idx], esub, rtol=1e-3, atol=1e-4))
+            c[:,degidx] = numpy.hstack(cs)[:,idx]
+    return c
+
+
+if __name__ == '__main__':
+    from pyscf import scf
+    from pyscf import gto
+    from pyscf import mcscf
+
+    mol = gto.M(
+    verbose = 0,
+    atom = '''
+           H    0.000000,  0.500000,  1.5   
+           O    0.000000,  0.000000,  1.
+           O    0.000000,  0.000000, -1.
+           H    0.000000, -0.500000, -1.5''',
+        basis = 'ccpvdz',
+    )
+
+    mf = scf.RHF(mol)
+    mf.scf()
+
+    aolst = [i for i,s in enumerate(mol.spherical_labels(1)) if 'H 1s' in s]
+    dm = mf.make_rdm1()
+    ncas, nelecas, mo = guess_cas(mf, dm, aolst, verbose=4)
+    mc = mcscf.CASSCF(mf, ncas, nelecas).set(verbose=4)
+    emc = mc.kernel(mo)[0]
+    print(emc,0)
 

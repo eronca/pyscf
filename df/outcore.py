@@ -39,6 +39,8 @@ def cholesky_eri(mol, erifile, auxbasis='weigend+etb', dataname='eri_mo', tmpdir
     if auxmol is None:
         auxmol = incore.format_aux_basis(mol, auxbasis)
 
+    if tmpdir is None:
+        tmpdir = lib.param.TMPDIR
     swapfile = tempfile.NamedTemporaryFile(dir=tmpdir)
     cholesky_eri_b(mol, swapfile.name, auxbasis, dataname,
                    int3c, aosym, int2c, comp, ioblk_size, verbose=log)
@@ -113,7 +115,11 @@ def cholesky_eri_b(mol, erifile, auxbasis='weigend+etb', dataname='eri_mo',
     j2c = incore.fill_2c2e(mol, auxmol, intor=int2c)
     log.debug('size of aux basis %d', j2c.shape[0])
     time1 = log.timer('2c2e', *time0)
-    low = scipy.linalg.cholesky(j2c, lower=True)
+    try:
+        low = scipy.linalg.cholesky(j2c, lower=True)
+    except scipy.linalg.LinAlgError:
+        j2c[numpy.diag_indices(j2c.shape[1])] += 1e-14
+        low = scipy.linalg.cholesky(j2c, lower=True)
     j2c = None
     time1 = log.timer('Cholesky 2c2e', *time1)
 
@@ -181,6 +187,8 @@ def general(mol, mo_coeffs, erifile, auxbasis='weigend+etb', dataname='eri_mo', 
     else:
         log = logger.Logger(mol.stdout, verbose)
 
+    if tmpdir is None:
+        tmpdir = lib.param.TMPDIR
     swapfile = tempfile.NamedTemporaryFile(dir=tmpdir)
     cholesky_eri_b(mol, swapfile.name, auxbasis, dataname,
                    int3c, aosym, int2c, comp, ioblk_size, verbose=log)
@@ -264,14 +272,13 @@ def prange(start, end, step):
         yield i, min(i+step, end)
 
 def _guess_shell_ranges(mol, buflen, aosym):
-    from pyscf.ao2mo.outcore import balance_segs
+    from pyscf.ao2mo.outcore import balance_partition
     ao_loc = mol.ao_loc_nr()
-    nao = ao_loc[-1]
     if 's2' in aosym:
-        segs = ao_loc[1:]*(ao_loc[1:]+1)//2 - ao_loc[:-1]*(ao_loc[:-1]+1)//2
+        return balance_partition(ao_loc*(ao_loc+1)//2, buflen)
     else:
-        segs = (ao_loc[1:]-ao_loc[:-1])*nao
-    return balance_segs(segs, buflen)
+        nao = ao_loc[-1]
+        return balance_partition(ao_loc*nao, buflen)
 
 def _stand_sym_code(sym):
     if isinstance(sym, int):

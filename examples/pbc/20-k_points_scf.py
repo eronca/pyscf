@@ -8,7 +8,6 @@ In most scenario, it should be used with pseudo potential.
 '''
 
 from pyscf.pbc import gto, scf, dft
-from pyscf.pbc.tools import pyscf_ase
 import numpy
 
 cell = gto.M(
@@ -28,7 +27,7 @@ cell = gto.M(
 )
 
 nk = [4,4,4]  # 4 k-poins for each axis, 4^3=64 kpts in total
-kpts = pyscf_ase.make_kpts(cell, nk)
+kpts = cell.make_kpts(nk)
 
 kmf = scf.KRHF(cell, kpts)
 kmf.kernel()

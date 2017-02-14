@@ -23,21 +23,15 @@ import time
 import numpy
 from pyscf import lib
 from pyscf import ao2mo
+from pyscf.ao2mo.incore import iden_coeffs
 from pyscf.ao2mo import _ao2mo
 from pyscf.lib import logger
-from pyscf.pbc import dft as pdft
 from pyscf.pbc import tools
 
 
 def get_eri(mydf, kpts=None, compact=False):
     cell = mydf.cell
-    if kpts is None:
-        kptijkl = numpy.zeros((4,3))
-    elif numpy.shape(kpts) == (3,):
-        kptijkl = numpy.vstack([kpts]*4)
-    else:
-        kptijkl = numpy.reshape(kpts, (4,3))
-
+    kptijkl = _format_kpts(kpts)
     kpti, kptj, kptk, kptl = kptijkl
     nao = cell.nao_nr()
     nao_pair = nao * (nao+1) // 2
@@ -81,26 +75,20 @@ def get_eri(mydf, kpts=None, compact=False):
 
 def general(mydf, mo_coeffs, kpts=None, compact=False):
     cell = mydf.cell
-    if kpts is None:
-        kptijkl = numpy.zeros((4,3))
-    elif numpy.shape(kpts) == (3,):
-        kptijkl = numpy.vstack([kpts]*4)
-    else:
-        kptijkl = numpy.reshape(kpts, (4,3))
-
+    kptijkl = _format_kpts(kpts)
     kpti, kptj, kptk, kptl = kptijkl
     if isinstance(mo_coeffs, numpy.ndarray) and mo_coeffs.ndim == 2:
         mo_coeffs = (mo_coeffs,) * 4
     coulG = tools.get_coulG(cell, kptj-kpti, gs=mydf.gs)
     ngs = len(coulG)
+    allreal = not any(numpy.iscomplexobj(mo) for mo in mo_coeffs)
 
 ####################
 # gamma point, the integral is real and with s4 symmetry
-    if (abs(kptijkl).sum() < 1e-9 and
-        not any((numpy.iscomplexobj(mo) for mo in mo_coeffs))):
+    if abs(kptijkl).sum() < 1e-9 and allreal:
         mo_pairs_G = get_mo_pairs_G(mydf, mo_coeffs[:2], kptijkl[:2], compact)
-        if ((ao2mo.incore.iden_coeffs(mo_coeffs[0],mo_coeffs[2]) and
-             ao2mo.incore.iden_coeffs(mo_coeffs[1],mo_coeffs[3]))):
+        if ((iden_coeffs(mo_coeffs[0], mo_coeffs[2]) and
+             iden_coeffs(mo_coeffs[1], mo_coeffs[3]))):
             mo_pairs_G *= numpy.sqrt(coulG).reshape(-1,1)
             moijR = moklR = mo_pairs_G.real.copy()
             moijI = moklI = mo_pairs_G.imag.copy()
@@ -125,8 +113,8 @@ def general(mydf, mo_coeffs, kpts=None, compact=False):
 #
 # complex integrals, N^4 elements
     elif ((abs(kpti-kptl).sum() < 1e-9) and (abs(kptj-kptk).sum() < 1e-9) and
-          ao2mo.incore.iden_coeffs(mo_coeffs[0],mo_coeffs[3]) and
-          ao2mo.incore.iden_coeffs(mo_coeffs[1],mo_coeffs[2])):
+          iden_coeffs(mo_coeffs[0], mo_coeffs[3]) and
+          iden_coeffs(mo_coeffs[1], mo_coeffs[2])):
         nmoi = mo_coeffs[0].shape[1]
         nmoj = mo_coeffs[1].shape[1]
         mo_ij_G = get_mo_pairs_G(mydf, mo_coeffs[:2], kptijkl[:2])
@@ -159,10 +147,10 @@ def get_ao_pairs_G(mydf, kpts=numpy.zeros((2,3)), compact=False):
             For gamma point, the shape is (ngs, nao*(nao+1)/2); otherwise the
             shape is (ngs, nao*nao)
     '''
-    if kpts is None: kpts = mydf.kpts
+    if kpts is None: kpts = numpy.zeros((2,3))
     cell = mydf.cell
     kpts = numpy.asarray(kpts)
-    coords = pdft.gen_grid.gen_uniform_grids(cell, mydf.gs)
+    coords = cell.gen_uniform_grids(mydf.gs)
     nao = cell.nao_nr()
     ngs = len(coords)
 
@@ -213,16 +201,16 @@ def get_mo_pairs_G(mydf, mo_coeffs, kpts=numpy.zeros((2,3)), compact=False):
         mo_pairs_G : (ngs, nmoi*nmoj) ndarray
             The FFT of the real-space MO pairs.
     '''
-    if kpts is None: kpts = mydf.kpts
+    if kpts is None: kpts = numpy.zeros((2,3))
     cell = mydf.cell
     kpts = numpy.asarray(kpts)
-    coords = pdft.gen_grid.gen_uniform_grids(cell, mydf.gs)
+    coords = cell.gen_uniform_grids(mydf.gs)
     nmoi = mo_coeffs[0].shape[1]
     nmoj = mo_coeffs[1].shape[1]
     ngs = len(coords)
 
     def trans(aoiR, aojR, fac=1):
-        if id(aoiR) == id(aojR) and ao2mo.incore.iden_coeffs(mo_coeffs[0], mo_coeffs[1]):
+        if id(aoiR) == id(aojR) and iden_coeffs(mo_coeffs[0], mo_coeffs[1]):
             moiR = mojR = numpy.asarray(lib.dot(mo_coeffs[0].T,aoiR.T), order='C')
         else:
             moiR = numpy.asarray(lib.dot(mo_coeffs[0].T, aoiR.T), order='C')
@@ -235,7 +223,7 @@ def get_mo_pairs_G(mydf, mo_coeffs, kpts=numpy.zeros((2,3)), compact=False):
 
     if abs(kpts).sum() < 1e-9:  # gamma point, real
         aoR = mydf._numint.eval_ao(cell, coords, kpts[:1])[0]
-        if compact and ao2mo.incore.iden_coeffs(mo_coeffs[0], mo_coeffs[1]):
+        if compact and iden_coeffs(mo_coeffs[0], mo_coeffs[1]):
             moR = numpy.asarray(lib.dot(mo_coeffs[0].T, aoR.T), order='C')
             npair = nmoi*(nmoi+1)//2
             mo_pairs_G = numpy.empty((npair,ngs), dtype=numpy.complex128)
@@ -259,6 +247,17 @@ def get_mo_pairs_G(mydf, mo_coeffs, kpts=numpy.zeros((2,3)), compact=False):
 
     return mo_pairs_G
 
+def _format_kpts(kpts):
+    if kpts is None:
+        kptijkl = numpy.zeros((4,3))
+    else:
+        kpts = numpy.asarray(kpts)
+        if kpts.size == 3:
+            kptijkl = numpy.vstack([kpts]*4).reshape(4,3)
+        else:
+            kptijkl = kpts.reshape(4,3)
+    return kptijkl
+
 
 if __name__ == '__main__':
     import pyscf.pbc.gto as pgto
@@ -267,7 +266,7 @@ if __name__ == '__main__':
     L = 5.
     n = 5
     cell = pgto.Cell()
-    cell.h = numpy.diag([L,L,L])
+    cell.a = numpy.diag([L,L,L])
     cell.gs = numpy.array([n,n,n])
 
     cell.atom = '''He    3.    2.       3.
@@ -283,7 +282,7 @@ if __name__ == '__main__':
     numpy.random.seed(1)
     kpts = numpy.random.random((4,3))
     kpts[3] = -numpy.einsum('ij->j', kpts[:3])
-    with_df = df.DF(cell)
+    with_df = df.FFTDF(cell)
     with_df.kpts = kpts
     mo =(numpy.random.random((nao,nao)) +
          numpy.random.random((nao,nao))*1j)
@@ -293,4 +292,4 @@ if __name__ == '__main__':
     eri0 = numpy.einsum('ijpl,pk->ijkl', eri0, mo.conj())
     eri0 = numpy.einsum('ijkp,pl->ijkl', eri0, mo       ).reshape(nao**2,-1)
     eri1 = with_df.ao2mo(mo, kpts)
-    print abs(eri1-eri0).sum()
+    print(abs(eri1-eri0).sum())

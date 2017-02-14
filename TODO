@@ -10,11 +10,9 @@
 
 * MP2 NMR
 
-* HF, DFT Hessian
-
 * Geometry optimizer
 
-* Periodic boundary condition
+* Add .conv attributes for SCF, MCSCF, CI, CC methods
 
 ------------------------------------------------
 * FCI
@@ -23,3 +21,6 @@
 
 ------------------------------------------------
 * dryrun mode
+
+* hot deployment
+  http://code.activestate.com/recipes/576515/

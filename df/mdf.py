@@ -44,7 +44,7 @@ def make_modrho_basis(mol, auxbasis=None):
     auxmol._atm, auxmol._bas, auxmol._env = \
             auxmol.make_env(mol._atom, auxmol._basis, mol._env[:gto.PTR_ENV_START])
 
-# Note libcint library will multiply the norm of the integration over spheric
+# Note libcint library will multiply the norm of the integration over spherical
 # part sqrt(4pi) to the basis.
     half_sph_norm = numpy.sqrt(.25/numpy.pi)
     for ib in range(len(auxmol._bas)):
@@ -62,19 +62,19 @@ def make_modrho_basis(mol, auxbasis=None):
         cs = numpy.einsum('pi,i->pi', cs, half_sph_norm/s)
         auxmol._env[ptr:ptr+np*nc] = cs.T.reshape(-1)
     auxmol._built = True
-    logger.debug(mol, 'aux basis, num shells = %d, num cGTO = %d',
+    logger.debug(mol, 'make aux basis, num shells = %d, num cGTOs = %d',
                  auxmol.nbas, auxmol.nao_nr())
     return auxmol
 
 
 def non_uniform_kgrids(gs):
-    from pyscf.dft import gen_grid
+    from pyscf import dft
     def plus_minus(n):
-        #rs, ws = gen_grid.radi.delley(n)
-        #rs, ws = gen_grid.radi.treutler_ahlrichs(n)
-        #rs, ws = gen_grid.radi.mura_knowles(n)
-        rs, ws = gen_grid.radi.gauss_chebyshev(n)
-        return numpy.hstack((rs,-rs)), numpy.hstack((ws,ws))
+        #rs, ws = dft.delley(n)
+        #rs, ws = dft.treutler_ahlrichs(n)
+        #rs, ws = dft.mura_knowles(n)
+        rs, ws = dft.gauss_chebyshev(n)
+        return numpy.hstack((rs,-rs[::-1])), numpy.hstack((ws,ws[::-1]))
     rx, wx = plus_minus(gs[0])
     ry, wy = plus_minus(gs[1])
     rz, wz = plus_minus(gs[2])
@@ -120,7 +120,7 @@ class MDF(lib.StreamObject):
         self.charge_constraint = True
         self.auxbasis = None
         self.auxmol = None
-        self._cderi_file = tempfile.NamedTemporaryFile()
+        self._cderi_file = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
         self._cderi = None
         self.blockdim = 240
         self._keys = set(self.__dict__.keys())
@@ -142,8 +142,7 @@ class MDF(lib.StreamObject):
     def build(self):
         self.dump_flags()
 
-        mol = self.mol
-        auxmol = self.auxmol = make_modrho_basis(self.mol, self.auxbasis)
+        self.auxmol = make_modrho_basis(self.mol, self.auxbasis)
 
         if not isinstance(self._cderi, str):
             if isinstance(self._cderi_file, str):
@@ -151,7 +150,7 @@ class MDF(lib.StreamObject):
             else:
                 self._cderi = self._cderi_file.name
 
-        _make_j3c(self, mol, auxmol)
+        _make_j3c(self, self.mol, self.auxmol)
         return self
 
     def load(self, key):
@@ -163,16 +162,15 @@ class MDF(lib.StreamObject):
             gs = [gs]*3
         naux = auxmol.nao_nr()
         Gv, Gvbase, kws = non_uniform_kgrids(gs)
-        nxyz = [i*2 for i in gs]
-        gxyz = lib.cartesian_prod([range(i) for i in nxyz])
+        gxyz = lib.cartesian_prod([numpy.arange(len(x)) for x in Gvbase])
         kk = numpy.einsum('ki,ki->k', Gv, Gv)
-        idx = numpy.argsort(kk)[::-1]
+#        idx = numpy.argsort(kk)[::-1]
 #        idx = idx[(kk[idx] < 300.) & (kk[idx] > 1e-4)]  # ~ Cut high energy plain waves
 #        log.debug('Cut grids %d to %d', Gv.shape[0], len(idx))
-        kk = kk[idx]
-        Gv = Gv[idx]
-        kws = kws[idx]
-        gxyz = gxyz[idx]
+#        kk = kk[idx]
+#        Gv = Gv[idx]
+#        kws = kws[idx]
+#        gxyz = gxyz[idx]
         coulG = .5/numpy.pi**2 * kws / kk
 
         if shls_slice is None:
@@ -182,7 +180,7 @@ class MDF(lib.StreamObject):
             ni = ao_loc[shls_slice[1]] - ao_loc[shls_slice[0]]
             nj = ao_loc[shls_slice[3]] - ao_loc[shls_slice[2]]
         nij = ni * nj
-        blksize = min(max(16, int(max_memory*1e6*.7/16/nij)), 16384)
+        blksize = min(max(16, int(max_memory*1e6*.7/16/nij)), coulG.size, 16384)
         sublk = max(16,int(blksize//4))
         pqkRbuf = numpy.empty(nij*sublk)
         pqkIbuf = numpy.empty(nij*sublk)
@@ -191,8 +189,9 @@ class MDF(lib.StreamObject):
 
         for p0, p1 in lib.prange(0, coulG.size, blksize):
             aoao = ft_ao.ft_aopair(mol, Gv[p0:p1], shls_slice, 's1',
-                                   Gvbase, gxyz[p0:p1], nxyz)
-            aoaux = ft_ao.ft_ao(auxmol, Gv[p0:p1], None, Gvbase, gxyz[p0:p1], nxyz)
+                                   numpy.eye(3), gxyz[p0:p1], Gvbase)
+            aoaux = ft_ao.ft_ao(auxmol, Gv[p0:p1], None,
+                                numpy.eye(3), gxyz[p0:p1], Gvbase)
 
             for i0, i1 in lib.prange(0, p1-p0, sublk):
                 nG = i1 - i0
@@ -377,17 +376,16 @@ def _make_j3c(mydf, mol, auxmol):
         feri[label][:,col0:col1] = dat
 
     Gv, Gvbase, kws = non_uniform_kgrids(mydf.gs)
-    nxyz = [i*2 for i in mydf.gs]
-    gxyz = lib.cartesian_prod([range(i) for i in nxyz])
+    gxyz = lib.cartesian_prod([numpy.arange(len(x)) for x in Gvbase])
     kk = numpy.einsum('ki,ki->k', Gv, Gv)
-    idx = numpy.argsort(kk)[::-1]
-    kk = kk[idx]
-    Gv = Gv[idx]
-    kws = kws[idx]
-    gxyz = gxyz[idx]
+#    idx = numpy.argsort(kk)[::-1]
+#    kk = kk[idx]
+#    Gv = Gv[idx]
+#    kws = kws[idx]
+#    gxyz = gxyz[idx]
     coulG = .5/numpy.pi**2 * kws / kk
 
-    aoaux = ft_ao.ft_ao(auxmol, Gv, None, Gvbase, gxyz, nxyz)
+    aoaux = ft_ao.ft_ao(auxmol, Gv, None, numpy.eye(3), gxyz, Gvbase)
     kLR = numpy.asarray(aoaux.real, order='C')
     kLI = numpy.asarray(aoaux.imag, order='C')
     j2c = auxmol.intor('cint2c2e_sph', hermi=1).T  # .T to C-ordr
@@ -403,6 +401,7 @@ def _make_j3c(mydf, mol, auxmol):
     shranges = outcore._guess_shell_ranges(mol, buflen, 's2ij')
     buflen = max([x[2] for x in shranges])
     blksize = max(16, int(max_memory*.15*1e6/16/buflen))
+    blksize = min(blksize, Gv.shape[0], 16384)
     pqkbuf = numpy.empty(buflen*blksize)
     bufs1 = numpy.empty((buflen*naux))
     # bufs2 holds either Lpq and ft_aopair
@@ -427,7 +426,7 @@ def _make_j3c(mydf, mol, auxmol):
 
         for p0, p1 in lib.prange(0, Gv.shape[0], blksize):
             aoao = ft_ao.ft_aopair(mol, Gv[p0:p1], shls_slice[:4], 's2',
-                                   Gvbase, gxyz[p0:p1], nxyz, buf=bufs2)
+                                   numpy.eye(3), gxyz[p0:p1], Gvbase, buf=bufs2)
             nG = p1 - p0
             pqkR = numpy.ndarray((ncol,nG), buffer=pqkbuf)
             pqkR[:] = aoao.real.T

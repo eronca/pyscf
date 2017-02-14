@@ -31,25 +31,25 @@ def getints(intor_name, atm, bas, env, shls_slice=None, comp=1, hermi=0,
             ==========================  =========  =============
             Function                    type       Expression
             ==========================  =========  =============
-            "cint1e_ovlp_sph"           spheric    ( \| \)
-            "cint1e_nuc_sph"            spheric    ( \| nuc \| \)
-            "cint1e_kin_sph"            spheric    (.5 \| p dot p\)
-            "cint1e_ia01p_sph"          spheric    (#C(0 1) \| nabla-rinv \| cross p\)
-            "cint1e_giao_irjxp_sph"     spheric    (#C(0 1) \| r cross p\)
-            "cint1e_cg_irxp_sph"        spheric    (#C(0 1) \| rc cross p\)
-            "cint1e_giao_a11part_sph"   spheric    (-.5 \| nabla-rinv \| r\)
-            "cint1e_cg_a11part_sph"     spheric    (-.5 \| nabla-rinv \| rc\)
-            "cint1e_a01gp_sph"          spheric    (g \| nabla-rinv cross p \|\)
-            "cint1e_igkin_sph"          spheric    (#C(0 .5) g \| p dot p\)
-            "cint1e_igovlp_sph"         spheric    (#C(0 1) g \|\)
-            "cint1e_ignuc_sph"          spheric    (#C(0 1) g \| nuc \|\)
-            "cint1e_z_sph"              spheric    ( \| zc \| \)
-            "cint1e_zz_sph"             spheric    ( \| zc zc \| \)
-            "cint1e_r_sph"              spheric    ( \| rc \| \)
-            "cint1e_r2_sph"             spheric    ( \| rc dot rc \| \)
-            "cint1e_rr_sph"             spheric    ( \| rc rc \| \)
-            "cint1e_pnucp_sph"          spheric    (p* \| nuc dot p \| \)
-            "cint1e_prinvxp_sph"        spheric    (p* \| rinv cross p \| \)
+            "cint1e_ovlp_sph"           spherical  ( \| \)
+            "cint1e_nuc_sph"            spherical  ( \| nuc \| \)
+            "cint1e_kin_sph"            spherical  (.5 \| p dot p\)
+            "cint1e_ia01p_sph"          spherical  (#C(0 1) \| nabla-rinv \| cross p\)
+            "cint1e_giao_irjxp_sph"     spherical  (#C(0 1) \| r cross p\)
+            "cint1e_cg_irxp_sph"        spherical  (#C(0 1) \| rc cross p\)
+            "cint1e_giao_a11part_sph"   spherical  (-.5 \| nabla-rinv \| r\)
+            "cint1e_cg_a11part_sph"     spherical  (-.5 \| nabla-rinv \| rc\)
+            "cint1e_a01gp_sph"          spherical  (g \| nabla-rinv cross p \|\)
+            "cint1e_igkin_sph"          spherical  (#C(0 .5) g \| p dot p\)
+            "cint1e_igovlp_sph"         spherical  (#C(0 1) g \|\)
+            "cint1e_ignuc_sph"          spherical  (#C(0 1) g \| nuc \|\)
+            "cint1e_z_sph"              spherical  ( \| zc \| \)
+            "cint1e_zz_sph"             spherical  ( \| zc zc \| \)
+            "cint1e_r_sph"              spherical  ( \| rc \| \)
+            "cint1e_r2_sph"             spherical  ( \| rc dot rc \| \)
+            "cint1e_rr_sph"             spherical  ( \| rc rc \| \)
+            "cint1e_pnucp_sph"          spherical  (p* \| nuc dot p \| \)
+            "cint1e_prinvxp_sph"        spherical  (p* \| rinv cross p \| \)
             "cint1e_ovlp"               spinor     ( \| \)
             "cint1e_nuc"                spinor     ( \| nuc \|\)
             "cint1e_srsr"               spinor     (sigma dot r \| sigma dot r\)
@@ -85,11 +85,11 @@ def getints(intor_name, atm, bas, env, shls_slice=None, comp=1, hermi=0,
             "cint1e_igkin_cart"         cartesian  (#C(0 .5) g \| p dot p\)
             "cint1e_igovlp_cart"        cartesian  (#C(0 1) g \|\)
             "cint1e_ignuc_cart"         cartesian  (#C(0 1) g \| nuc \|\)
-            "cint1e_ipovlp_sph"         spheric    (nabla \|\)
-            "cint1e_ipkin_sph"          spheric    (.5 nabla \| p dot p\)
-            "cint1e_ipnuc_sph"          spheric    (nabla \| nuc \|\)
-            "cint1e_iprinv_sph"         spheric    (nabla \| rinv \|\)
-            "cint1e_rinv_sph"           spheric    (\| rinv \|\)
+            "cint1e_ipovlp_sph"         spherical  (nabla \|\)
+            "cint1e_ipkin_sph"          spherical  (.5 nabla \| p dot p\)
+            "cint1e_ipnuc_sph"          spherical  (nabla \| nuc \|\)
+            "cint1e_iprinv_sph"         spherical  (nabla \| rinv \|\)
+            "cint1e_rinv_sph"           spherical  (\| rinv \|\)
             "cint1e_ipovlp"             spinor     (nabla \|\)
             "cint1e_ipkin"              spinor     (.5 nabla \| p dot p\)
             "cint1e_ipnuc"              spinor     (nabla \| nuc \|\)
@@ -101,18 +101,18 @@ def getints(intor_name, atm, bas, env, shls_slice=None, comp=1, hermi=0,
             "cint1e_ipnuc_cart"         cartesian  (nabla \| nuc \|\)
             "cint1e_iprinv_cart"        cartesian  (nabla \| rinv \|\)
             "cint1e_rinv_cart"          cartesian  (\| rinv \|\)
-            "cint2e_p1vxp1_sph"         spheric    ( p* \, cross p \| \, \) ; SSO
-            "cint2e_sph"                spheric    ( \, \| \, \)
-            "cint2e_ig1_sph"            spheric    (#C(0 1) g \, \| \, \)
+            "cint2e_p1vxp1_sph"         spherical  ( p* \, cross p \| \, \) ; SSO
+            "cint2e_sph"                spherical  ( \, \| \, \)
+            "cint2e_ig1_sph"            spherical  (#C(0 1) g \, \| \, \)
             "cint2e_ig1_cart"           cartesian  (#C(0 1) g \, \| \, \)
-            "cint2e_ip1_sph"            spheric    (nabla \, \| \,\)
+            "cint2e_ip1_sph"            spherical  (nabla \, \| \,\)
             "cint2e_ip1_cart"           cartesian  (nabla \, \| \,\)
-            "cint2e_ipip1_sph"          spheric    ( nabla nabla \, \| \, \)
-            "cint2e_ipvip1_sph"         spheric    ( nabla \, nabla \| \, \)
-            "cint2e_ip1ip2_sph"         spheric    ( nabla \, \| nabla \, \)
-            "cint3c2e_ip1_sph"          spheric    (nabla \, \| \)
-            "cint3c2e_ip2_sph"          spheric    ( \, \| nabla\)
-            "cint2c2e_ip1_sph"          spheric    (nabla \| r12 \| \)
+            "cint2e_ipip1_sph"          spherical  ( nabla nabla \, \| \, \)
+            "cint2e_ipvip1_sph"         spherical  ( nabla \, nabla \| \, \)
+            "cint2e_ip1ip2_sph"         spherical  ( nabla \, \| nabla \, \)
+            "cint3c2e_ip1_sph"          spherical  (nabla \, \| \)
+            "cint3c2e_ip2_sph"          spherical  ( \, \| nabla\)
+            "cint2c2e_ip1_sph"          spherical  (nabla \| r12 \| \)
             ==========================  =========  =============
 
         atm : int32 ndarray
@@ -317,45 +317,44 @@ def getints2e(intor_name, atm, bas, env, shls_slice=None, comp=1,
         return out
 
     else:
-        from pyscf.scf import _vhf
         if shls_slice is None:
-            shls_slice = (0, nbas, 0, nbas)
+            shls_slice = (0, nbas, 0, nbas, 0, nbas, 0, nbas)
+        elif len(shls_slice) == 4:
+            shls_slice = shls_slice + (0, nbas, 0, nbas)
         else:
-            assert(shls_slice[1] <= nbas and shls_slice[3] <= nbas)
-        bralst = numpy.arange(shls_slice[0], shls_slice[1], dtype=numpy.int32)
-        ketlst = numpy.arange(shls_slice[2], shls_slice[3], dtype=numpy.int32)
-        num_cgto_of = getattr(libcgto, cgto_in_shell)
-        naoi = sum([num_cgto_of(ctypes.c_int(i), c_bas) for i in bralst])
-        naoj = sum([num_cgto_of(ctypes.c_int(i), c_bas) for i in ketlst])
+            assert(shls_slice[1] <= nbas and shls_slice[3] <= nbas and
+                   shls_slice[5] <= nbas and shls_slice[7] <= nbas)
+        ao_loc = make_loc(bas, intor_name)
+        i0, i1, j0, j1, k0, k1, l0, l1 = shls_slice
+        naoi = ao_loc[i1] - ao_loc[i0]
+        naoj = ao_loc[j1] - ao_loc[j0]
+        naok = ao_loc[k1] - ao_loc[k0]
+        naol = ao_loc[l1] - ao_loc[l0]
         if aosym in ('s4', 's2ij'):
             nij = naoi * (naoi + 1) // 2
-            assert(numpy.alltrue(bralst == ketlst))
+            assert(numpy.all(ao_loc[i0:i1]-ao_loc[i0] == ao_loc[j0:j1]-ao_loc[j0]))
         else:
             nij = naoi * naoj
         if aosym in ('s4', 's2kl'):
-            nkl = nao * (nao + 1) // 2
+            nkl = naok * (naok + 1) // 2
+            assert(numpy.all(ao_loc[k0:k1]-ao_loc[k0] == ao_loc[l0:l1]-ao_loc[l0]))
         else:
-            nkl = nao * nao
+            nkl = naok * naol
         if comp == 1:
-            if out is None:
-                out = numpy.empty((nij,nkl))
-            else:
-                out = numpy.ndarray((nij,nkl), buffer=out)
+            out = numpy.ndarray((nij,nkl), buffer=out)
         else:
-            if out is None:
-                out = numpy.empty((comp,nij,nkl))
-            else:
-                out = numpy.ndarray((comp,nij,nkl), buffer=out)
+            out = numpy.ndarray((comp,nij,nkl), buffer=out)
 
-        cintopt = _vhf.make_cintopt(atm, bas, env, intor_name)
+        if cintopt is None:
+            cintopt = make_cintopt(atm, bas, env, intor_name)
         prescreen = pyscf.lib.c_null_ptr()
         drv = libcgto.GTOnr2e_fill_drv
-        drv(getattr(libcgto, intor_name), getattr(libcgto, cgto_in_shell),
+        drv(getattr(libcgto, intor_name),
             getattr(libcgto, 'GTOnr2e_fill_'+aosym), prescreen,
             out.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(comp),
-            bralst.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(bralst.size),
-            ketlst.ctypes.data_as(ctypes.c_void_p), ctypes.c_int(ketlst.size),
-            cintopt, c_atm, ctypes.c_int(natm), c_bas, ctypes.c_int(nbas), c_env)
+            (ctypes.c_int*8)(*shls_slice),
+            ao_loc.ctypes.data_as(ctypes.c_void_p), cintopt,
+            c_atm, ctypes.c_int(natm), c_bas, ctypes.c_int(nbas), c_env)
         cintopt = None
         return out
 
@@ -369,25 +368,25 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
             ==========================  =========  =============
             Function                    type       Expression
             ==========================  =========  =============
-            "cint1e_ovlp_sph"           spheric    ( \| \)
-            "cint1e_nuc_sph"            spheric    ( \| nuc \| \)
-            "cint1e_kin_sph"            spheric    (.5 \| p dot p\)
-            "cint1e_ia01p_sph"          spheric    (#C(0 1) \| nabla-rinv \| cross p\)
-            "cint1e_giao_irjxp_sph"     spheric    (#C(0 1) \| r cross p\)
-            "cint1e_cg_irxp_sph"        spheric    (#C(0 1) \| rc cross p\)
-            "cint1e_giao_a11part_sph"   spheric    (-.5 \| nabla-rinv \| r\)
-            "cint1e_cg_a11part_sph"     spheric    (-.5 \| nabla-rinv \| rc\)
-            "cint1e_a01gp_sph"          spheric    (g \| nabla-rinv cross p \|\)
-            "cint1e_igkin_sph"          spheric    (#C(0 .5) g \| p dot p\)
-            "cint1e_igovlp_sph"         spheric    (#C(0 1) g \|\)
-            "cint1e_ignuc_sph"          spheric    (#C(0 1) g \| nuc \|\)
-            "cint1e_z_sph"              spheric    ( \| zc \| \)
-            "cint1e_zz_sph"             spheric    ( \| zc zc \| \)
-            "cint1e_r_sph"              spheric    ( \| rc \| \)
-            "cint1e_r2_sph"             spheric    ( \| rc dot rc \| \)
-            "cint1e_rr_sph"             spheric    ( \| rc rc \| \)
-            "cint1e_pnucp_sph"          spheric    (p* \| nuc dot p \| \)
-            "cint1e_prinvxp_sph"        spheric    (p* \| rinv cross p \| \)
+            "cint1e_ovlp_sph"           spherical  ( \| \)
+            "cint1e_nuc_sph"            spherical  ( \| nuc \| \)
+            "cint1e_kin_sph"            spherical  (.5 \| p dot p\)
+            "cint1e_ia01p_sph"          spherical  (#C(0 1) \| nabla-rinv \| cross p\)
+            "cint1e_giao_irjxp_sph"     spherical  (#C(0 1) \| r cross p\)
+            "cint1e_cg_irxp_sph"        spherical  (#C(0 1) \| rc cross p\)
+            "cint1e_giao_a11part_sph"   spherical  (-.5 \| nabla-rinv \| r\)
+            "cint1e_cg_a11part_sph"     spherical  (-.5 \| nabla-rinv \| rc\)
+            "cint1e_a01gp_sph"          spherical  (g \| nabla-rinv cross p \|\)
+            "cint1e_igkin_sph"          spherical  (#C(0 .5) g \| p dot p\)
+            "cint1e_igovlp_sph"         spherical  (#C(0 1) g \|\)
+            "cint1e_ignuc_sph"          spherical  (#C(0 1) g \| nuc \|\)
+            "cint1e_z_sph"              spherical  ( \| zc \| \)
+            "cint1e_zz_sph"             spherical  ( \| zc zc \| \)
+            "cint1e_r_sph"              spherical  ( \| rc \| \)
+            "cint1e_r2_sph"             spherical  ( \| rc dot rc \| \)
+            "cint1e_rr_sph"             spherical  ( \| rc rc \| \)
+            "cint1e_pnucp_sph"          spherical  (p* \| nuc dot p \| \)
+            "cint1e_prinvxp_sph"        spherical  (p* \| rinv cross p \| \)
             "cint1e_ovlp"               spinor     ( \| \)
             "cint1e_nuc"                spinor     ( \| nuc \|\)
             "cint1e_srsr"               spinor     (sigma dot r \| sigma dot r\)
@@ -423,11 +422,11 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
             "cint1e_igkin_cart"         cartesian  (#C(0 .5) g \| p dot p\)
             "cint1e_igovlp_cart"        cartesian  (#C(0 1) g \|\)
             "cint1e_ignuc_cart"         cartesian  (#C(0 1) g \| nuc \|\)
-            "cint1e_ipovlp_sph"         spheric    (nabla \|\)
-            "cint1e_ipkin_sph"          spheric    (.5 nabla \| p dot p\)
-            "cint1e_ipnuc_sph"          spheric    (nabla \| nuc \|\)
-            "cint1e_iprinv_sph"         spheric    (nabla \| rinv \|\)
-            "cint1e_rinv_sph"           spheric    (\| rinv \|\)
+            "cint1e_ipovlp_sph"         spherical  (nabla \|\)
+            "cint1e_ipkin_sph"          spherical  (.5 nabla \| p dot p\)
+            "cint1e_ipnuc_sph"          spherical  (nabla \| nuc \|\)
+            "cint1e_iprinv_sph"         spherical  (nabla \| rinv \|\)
+            "cint1e_rinv_sph"           spherical  (\| rinv \|\)
             "cint1e_ipovlp"             spinor     (nabla \|\)
             "cint1e_ipkin"              spinor     (.5 nabla \| p dot p\)
             "cint1e_ipnuc"              spinor     (nabla \| nuc \|\)
@@ -439,9 +438,9 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
             "cint1e_ipnuc_cart"         cartesian  (nabla \| nuc \|\)
             "cint1e_iprinv_cart"        cartesian  (nabla \| rinv \|\)
             "cint1e_rinv_cart"          cartesian  (\| rinv \|\)
-            "cint2e_p1vxp1_sph"         spheric    ( p* \, cross p \| \, \) ; SSO
-            "cint2e_sph"                spheric    ( \, \| \, \)
-            "cint2e_ig1_sph"            spheric    (#C(0 1) g \, \| \, \)
+            "cint2e_p1vxp1_sph"         spherical  ( p* \, cross p \| \, \) ; SSO
+            "cint2e_sph"                spherical  ( \, \| \, \)
+            "cint2e_ig1_sph"            spherical  (#C(0 1) g \, \| \, \)
             "cint2e"                    spinor     (, \| \, \)
             "cint2e_spsp1"              spinor     (sigma dot p \, sigma dot p \| \, \)
             "cint2e_spsp1spsp2"         spinor     (sigma dot p \, sigma dot p \| sigma dot p \, sigma dot p \)
@@ -465,7 +464,7 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
             "cint2e_spv1spsp2"          spinor     (sigma dot p \, \| sigma dot p \, sigma dot p\)
             "cint2e_vsp1spsp2"          spinor     (\, sigma dot p \| sigma dot p \, sigma dot p\)
             "cint2e_ig1_cart"           cartesian  (#C(0 1) g \, \| \, \)
-            "cint2e_ip1_sph"            spheric    (nabla \, \| \,\)
+            "cint2e_ip1_sph"            spherical  (nabla \, \| \,\)
             "cint2e_ip1"                spinor     (nabla \, \| \,\)
             "cint2e_ipspsp1"            spinor     (nabla sigma dot p \, sigma dot p \| \,\)
             "cint2e_ip1spsp2"           spinor     (nabla \, \| sigma dot p \, sigma dot p\)
@@ -478,12 +477,12 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
             "cint2e_cg_ssa10ssp2"       spinor     (rc cross sigma \, \| gaunt \| \, sigma dot p\)
             "cint2e_giao_ssa10ssp2"     spinor     (r cross sigma  \, \| gaunt \| \, sigma dot p\)
             "cint2e_gssp1ssp2"          spinor     (g \, sigma dot p  \| gaunt \| \, sigma dot p\)
-            "cint2e_ipip1_sph"          spheric    ( nabla nabla \, \| \, \)
-            "cint2e_ipvip1_sph"         spheric    ( nabla \, nabla \| \, \)
-            "cint2e_ip1ip2_sph"         spheric    ( nabla \, \| nabla \, \)
-            "cint3c2e_ip1_sph"          spheric    (nabla \, \| \)
-            "cint3c2e_ip2_sph"          spheric    ( \, \| nabla\)
-            "cint2c2e_ip1_sph"          spheric    (nabla \| r12 \| \)
+            "cint2e_ipip1_sph"          spherical  ( nabla nabla \, \| \, \)
+            "cint2e_ipvip1_sph"         spherical  ( nabla \, nabla \| \, \)
+            "cint2e_ip1ip2_sph"         spherical  ( nabla \, \| nabla \, \)
+            "cint3c2e_ip1_sph"          spherical  (nabla \, \| \)
+            "cint3c2e_ip2_sph"          spherical  ( \, \| nabla\)
+            "cint2c2e_ip1_sph"          spherical  (nabla \| r12 \| \)
             "cint3c2e_spinor"           spinor     (nabla \, \| \)
             "cint3c2e_spsp1_spinor"     spinor     (nabla \, \| \)
             "cint3c2e_ip1_spinor"       spinor     (nabla \, \| \)
@@ -547,7 +546,7 @@ def getints_by_shell(intor_name, shls, atm, bas, env, comp=1):
         di = num_cgto_of(shls[0])
         dj = num_cgto_of(shls[1])
         l = bas[shls[2],ANG_OF]
-        if '_ssc' in intor_name: # mixed spheric-cartesian
+        if '_ssc' in intor_name: # mixed spherical-cartesian
             dk = (l+1)*(l+2)//2 * bas[shls[2],NCTR_OF]
         else:
             dk = (l*2+1) * bas[shls[2],NCTR_OF]

@@ -6,7 +6,6 @@
 import unittest
 import numpy
 from pyscf.pbc import gto as pgto
-from pyscf.pbc.scf import scfint
 from pyscf.pbc.dft import gen_grid
 from pyscf.pbc.dft import numint
 
@@ -27,8 +26,8 @@ class KnowValues(unittest.TestCase):
         L = 4.
         n = 30
         cell = pgto.Cell()
-        cell.h = numpy.eye(3)*L
-        cell.h[0,1] = cell.h[1,2] = L / 2
+        cell.a = numpy.eye(3)*L
+        cell.a[1,0] = cell.a[2,1] = L / 2
         cell.gs = numpy.array([n,n,n])
 
         cell.atom =[['He' , ( L/2+0., L/2+0. ,   L/2+1.)],
@@ -39,7 +38,7 @@ class KnowValues(unittest.TestCase):
         grids.level = 3
         grids.build()
         s1 = get_ovlp(cell, grids)
-        s2 = scfint.get_ovlp(cell)
+        s2 = cell.pbc_intor('cint1e_ovlp_sph')
         self.assertAlmostEqual(numpy.linalg.norm(s1-s2), 0, 5)
         self.assertEqual(grids.weights.size, 14829)
 

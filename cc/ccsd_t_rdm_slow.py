@@ -8,21 +8,21 @@ import ctypes
 import tempfile
 import numpy
 import h5py
-import pyscf.lib as lib
+from pyscf import lib
 from pyscf.lib import logger
 from pyscf import ao2mo
 from pyscf.cc import ccsd
 from pyscf.cc import _ccsd
-from pyscf.cc import ccsd_t_slow as ccsd_t
+from pyscf.cc.ccsd_t_lambde_slow import p6_, r6_
 from pyscf.cc import ccsd_rdm
 
-def gamma1_intermediates(mycc, t1, t2, l1, l2, eris=None, max_memory=2000):
+def gamma1_intermediates(mycc, t1, t2, l1, l2, eris=None):
     doo, dov, dvo, dvv = ccsd_rdm.gamma1_intermediates(mycc, t1, t2, l1, l2)
 
     if eris is None: eris = ccsd._ERIS(mycc)
     nocc, nvir = t1.shape
     eris_ovvv = _cp(eris.ovvv)
-    eris_ovvv = _ccsd.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
+    eris_ovvv = lib.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
     eris_ovvv = eris_ovvv.reshape(nocc,nvir,nvir,nvir)
     mo_e = mycc._scf.mo_energy
     eia = lib.direct_sum('i-a->ia',mo_e[:nocc], mo_e[nocc:])
@@ -31,10 +31,10 @@ def gamma1_intermediates(mycc, t1, t2, l1, l2, eris=None, max_memory=2000):
     w =(numpy.einsum('iabf,kjcf->ijkabc', eris_ovvv, t2)
       - numpy.einsum('iajm,mkbc->ijkabc', eris_ovoo, t2)) / d3
     v = numpy.einsum('iajb,kc->ijkabc', eris.ovov, t1) / d3 * .5
-    w = ccsd_t.p6_(w)
-    v = ccsd_t.p6_(v)
+    w = p6_(w)
+    v = p6_(v)
     wv = w+v
-    rw = ccsd_t.r6_(w)
+    rw = r6_(w)
     goo =-numpy.einsum('iklabc,jklabc->ij', wv, rw) * .5
     gvv = numpy.einsum('ijkacd,ijkbcd->ab', wv, rw) * .5
 
@@ -43,14 +43,14 @@ def gamma1_intermediates(mycc, t1, t2, l1, l2, eris=None, max_memory=2000):
     return doo, dov, dvo, dvv
 
 # gamma2 intermediates in Chemist's notation
-def gamma2_intermediates(mycc, t1, t2, l1, l2, eris=None, max_memory=2000):
+def gamma2_intermediates(mycc, t1, t2, l1, l2, eris=None):
     dovov, dvvvv, doooo, doovv, dovvo, dvvov, dovvv, dooov = \
             ccsd_rdm.gamma2_intermediates(mycc, t1, t2, l1, l2)
     if eris is None: eris = ccsd._ERIS(mycc)
 
     nocc, nvir = t1.shape
     eris_ovvv = _cp(eris.ovvv)
-    eris_ovvv = _ccsd.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
+    eris_ovvv = lib.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
     eris_ovvv = eris_ovvv.reshape(nocc,nvir,nvir,nvir)
     mo_e = mycc._scf.mo_energy
     eia = lib.direct_sum('i-a->ia',mo_e[:nocc], mo_e[nocc:])
@@ -59,10 +59,10 @@ def gamma2_intermediates(mycc, t1, t2, l1, l2, eris=None, max_memory=2000):
     w =(numpy.einsum('iabf,kjcf->ijkabc', eris_ovvv, t2)
       - numpy.einsum('iajm,mkbc->ijkabc', eris_ovoo, t2)) / d3
     v = numpy.einsum('iajb,kc->ijkabc', eris.ovov, t1) / d3 * .5
-    w = ccsd_t.p6_(w)
-    v = ccsd_t.p6_(v)
-    rw = ccsd_t.r6_(w)
-    rwv = ccsd_t.r6_(w*2+v)
+    w = p6_(w)
+    v = p6_(v)
+    rw = r6_(w)
+    rwv = r6_(w*2+v)
     dovov += numpy.einsum('kc,ijkabc->iajb', t1, rw) * .5
     dooov -= numpy.einsum('mkbc,ijkabc->jmia', t2, rwv)
     # Note "dovvv +=" also changes the value of dvvov
@@ -204,7 +204,7 @@ if __name__ == '__main__':
 
     nocc, nvir = t1.shape
     eris_ovvv = _cp(eris.ovvv)
-    eris_ovvv = _ccsd.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
+    eris_ovvv = lib.unpack_tril(eris_ovvv.reshape(nocc*nvir,-1))
     eris_ovvv = eris_ovvv.reshape(nocc,nvir,nvir,nvir)
     mo_e = mcc._scf.mo_energy
     eia = lib.direct_sum('i-a->ia',mo_e[:nocc], mo_e[nocc:])

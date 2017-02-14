@@ -8,7 +8,7 @@ import ctypes
 import tempfile
 import numpy
 import h5py
-import pyscf.lib as lib
+from pyscf import lib
 from pyscf.lib import logger
 import pyscf.ao2mo
 import pyscf.cc.ccsd_incore as ccsd
@@ -16,7 +16,6 @@ from pyscf import gto
 from pyscf.cc import ccsd_rdm
 from pyscf.cc import ccsd_grad_incore as ccsd_grad
 from pyscf.cc import _ccsd
-from pyscf.cc import ccsd_t_slow as ccsd_t
 from pyscf.cc import ccsd_t_rdm_slow as ccsd_t_rdm
 import pyscf.grad
 
@@ -38,7 +37,7 @@ def IX_intermediates(mycc, t1, t2, l1, l2, d1=None, d2=None, eris=None):
         dvvov = dovvv.transpose(2,3,0,1)
 
     nocc, nvir = t1.shape
-    eris_ovvv = _ccsd.unpack_tril(_cp(eris.ovvv).reshape(nocc*nvir,-1))
+    eris_ovvv = lib.unpack_tril(_cp(eris.ovvv).reshape(nocc*nvir,-1))
     eris_ovvv = eris_ovvv.reshape(nocc,nvir,nvir,nvir)
     eris_vvvv = pyscf.ao2mo.restore(1, _cp(eris.vvvv), nvir)
     dvvvv = pyscf.ao2mo.restore(1, _cp(dvvvv), nvir)
@@ -206,14 +205,14 @@ def kernel(mycc, t1=None, t2=None, l1=None, l2=None, eris=None, atmlst=None,
         de[k] -= numpy.einsum('xij,ij->x', s1[:,p0:p1], vhf4sij[p0:p1]) * 2
 
 # 2e AO integrals dot 2pdm
-        eri1 = gto.moleintor.getints('cint2e_ip1_sph', mol._atm, mol._bas,
-                                     mol._env, numpy.arange(shl0,shl1), comp=3,
-                                     aosym='s2kl').reshape(3,p1-p0,nao,-1)
+        eri1 = mol.intor('cint2e_ip1_sph', comp=3, aosym='s2kl',
+                         shls_slice=(shl0,shl1,0,mol.nbas,0,mol.nbas,0,mol.nbas))
+        eri1 = eri1.reshape(3,p1-p0,nao,-1)
         dm2buf = ccsd_grad._load_block_tril(dm2ao, p0, p1)
         de[k] -= numpy.einsum('xijk,ijk->x', eri1, dm2buf) * 2
 
         for i in range(3):
-            #:tmp = _ccsd.unpack_tril(eri1[i].reshape(-1,nao_pair))
+            #:tmp = lib.unpack_tril(eri1[i].reshape(-1,nao_pair))
             #:vj = numpy.einsum('ijkl,kl->ij', tmp, hf_dm1)
             #:vk = numpy.einsum('ijkl,jk->il', tmp, hf_dm1)
             vj, vk = ccsd_grad.hf_get_jk_incore(eri1[i], hf_dm1)

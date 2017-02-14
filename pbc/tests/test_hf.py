@@ -25,9 +25,8 @@ def test_hf(pseudo=None):
     # The periodic calculation
     cell = pbcgto.Cell()
     cell.unit = 'B'
-    cell.h = np.diag([L,L,L])
+    cell.a = np.diag([L,L,L])
     cell.gs = np.array([60,60,60])
-    cell.nimgs = [0,0,0]
 
     cell.atom = mol.atom
     cell.basis = mol.basis

@@ -14,12 +14,14 @@ See Also:
 
 import time
 import numpy as np
+import scipy.linalg
 import h5py
 import scipy.optimize
 from pyscf.pbc.scf import hf as pbchf
 from pyscf import lib
 from pyscf.scf import hf
 from pyscf.lib import logger
+from pyscf.pbc.gto import ecp
 from pyscf.pbc.scf import addons
 from pyscf.pbc.scf import chkfile
 
@@ -60,7 +62,6 @@ def get_j(mf, cell, dm_kpts, kpts, kpt_band=None):
             Density matrix at each k-point.  If a list of k-point DMs, eg,
             UHF alpha and beta DM, the alpha and beta DMs are contracted
             separately.
-        kpts : (nkpts, 3) ndarray
 
     Kwargs:
         kpt_band : (3,) ndarray
@@ -71,7 +72,7 @@ def get_j(mf, cell, dm_kpts, kpts, kpt_band=None):
         or list of vj if the input dm_kpts is a list of DMs
     '''
     from pyscf.pbc import df
-    return df.DF(cell).get_jk(dm_kpts, kpts, kpt_band, with_k=False)[0]
+    return df.FFTDF(cell).get_jk(dm_kpts, kpts, kpt_band, with_k=False)[0]
 
 
 def get_jk(mf, cell, dm_kpts, kpts, kpt_band=None):
@@ -80,7 +81,6 @@ def get_jk(mf, cell, dm_kpts, kpts, kpt_band=None):
     Args:
         dm_kpts : (nkpts, nao, nao) ndarray
             Density matrix at each k-point
-        kpts : (nkpts, 3) ndarray
 
     Kwargs:
         kpt_band : (3,) ndarray
@@ -92,8 +92,7 @@ def get_jk(mf, cell, dm_kpts, kpts, kpt_band=None):
         or list of vj and vk if the input dm_kpts is a list of DMs
     '''
     from pyscf.pbc import df
-    return df.DF(cell).get_jk(dm_kpts, kpts, kpt_band, with_j=False,
-                              exxdiv=mf.exxdiv)[0]
+    return df.FFTDF(cell).get_jk(dm_kpts, kpts, kpt_band, exxdiv=mf.exxdiv)
 
 def get_fock(mf, h1e_kpts, s_kpts, vhf_kpts, dm_kpts, cycle=-1, adiis=None,
              diis_start_cycle=None, level_shift_factor=None, damp_factor=None):
@@ -152,9 +151,9 @@ def get_occ(mf, mo_energy_kpts=None, mo_coeff_kpts=None):
     if mf.verbose >= logger.DEBUG:
         np.set_printoptions(threshold=len(mo_energy))
         logger.debug(mf, '     k-point                  mo_energy')
-        for k,kpt in enumerate(mf.kpts):
-            kstr = '(%6.3f %6.3f %6.3f)' % tuple(mf.cell.get_scaled_kpts(kpt))
-            logger.debug(mf, '  %2d %s   %s %s', k, kstr,
+        for k,kpt in enumerate(mf.cell.get_scaled_kpts(mf.kpts)):
+            logger.debug(mf, '  %2d (%6.3f %6.3f %6.3f)   %s %s',
+                         k, kpt[0], kpt[1], kpt[2],
                          mo_energy_kpts[k,mo_occ_kpts[k]> 0],
                          mo_energy_kpts[k,mo_occ_kpts[k]==0])
         np.set_printoptions()
@@ -191,6 +190,24 @@ def energy_elec(mf, dm_kpts=None, h1e_kpts=None, vhf_kpts=None):
     e_coul = e_coul.real
     logger.debug(mf, 'E_coul = %.15g', e_coul)
     return e1+e_coul, e_coul
+
+def canonicalize(mf, mo_coeff_kpts, mo_occ_kpts, fock=None):
+    if fock is None:
+        dm = mf.make_rdm1(mo_coeff_kpts, mo_occ_kpts)
+        fock = mf.get_hcore() + mf.get_jk(mol, dm)
+    mo_coeff_kpts = mo_coeff_kpts.copy()
+    mo_e = np.empty_like(mo_occ_kpts)
+    for k, mo in enumerate(mo_coeff_kpts):
+        occidx = mo_occ_kpts[k] == 2
+        viridx = ~occidx
+        for idx in (occidx, viridx):
+            if np.count_nonzero(idx) > 0:
+                orb = mo[:,idx]
+                f1 = reduce(np.dot, (orb.T.conj(), fock[k], orb))
+                e, c = scipy.linalg.eigh(f1)
+                mo[:,idx] = np.dot(orb, c)
+                mo_e[k,idx] = e
+    return mo_e, mo_coeff_kpts
 
 
 def init_guess_by_chkfile(cell, chkfile_name, project=True, kpts=None):
@@ -268,7 +285,7 @@ class KRHF(hf.RHF):
         self.cell = cell
         hf.RHF.__init__(self, cell)
 
-        self.with_df = df.DF(cell)
+        self.with_df = df.FFTDF(cell)
         self.exxdiv = exxdiv
         self.kpts = kpts
         self.direct_scf = False
@@ -326,12 +343,14 @@ class KRHF(hf.RHF):
     def get_hcore(self, cell=None, kpts=None):
         if cell is None: cell = self.cell
         if kpts is None: kpts = self.kpts
-        if cell.pseudo is None:
-            nuc = self.with_df.get_nuc(kpts)
+        if cell.pseudo:
+            nuc = lib.asarray(self.with_df.get_pp(kpts))
         else:
-            nuc = self.with_df.get_pp(kpts)
-        t = cell.pbc_intor('cint1e_kin_sph', 1, 1, kpts)
-        return lib.asarray(nuc) + lib.asarray(t)
+            nuc = lib.asarray(self.with_df.get_nuc(kpts))
+        if len(cell._ecpbas) > 0:
+            nuc += lib.asarray(ecp.ecp_int(cell, kpts))
+        t = lib.asarray(cell.pbc_intor('cint1e_kin_sph', 1, 1, kpts))
+        return nuc + t
 
     get_ovlp = get_ovlp
     get_fock = get_fock
@@ -439,4 +458,6 @@ class KRHF(hf.RHF):
             with h5py.File(self.chkfile) as fh5:
                 fh5['scf/kpts'] = self.kpts
         return self
+
+    canonicalize = canonicalize
 

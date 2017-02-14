@@ -3,11 +3,11 @@
 import ctypes
 from functools import reduce
 import numpy
-import pyscf.lib
+from pyscf import lib
 from pyscf.fci import cistring
 from pyscf.fci import rdm
 
-librdm = pyscf.lib.load_library('libfci')
+librdm = lib.load_library('libfci')
 
 ######################################################
 # Spin squared operator
@@ -61,7 +61,6 @@ def spin_square(fcivec, norb, nelec, mo_coeff=None, ovlp=1):
     UHF-FCI wavefunction
     '''
     from pyscf.fci import direct_spin1
-    neleca, nelecb = _unpack(nelec)
 
     if isinstance(mo_coeff, numpy.ndarray) and mo_coeff.ndim == 2:
         mo_coeff = (mo_coeff, mo_coeff)
@@ -148,7 +147,7 @@ def local_spin(fcivec, norb, nelec, mo_coeff=None, ovlp=1, aolst=[]):
 # size of intermediate determinants (norb,neleca+1;norb,nelecb-1)
 def _make_rdm2_baab(fcivec, norb, nelec):
     fcivec = numpy.asarray(fcivec, order='C')
-    neleca, nelecb = _unpack(nelec)
+    neleca, nelecb = _unpack_nelec(nelec)
     if neleca == norb or nelecb == 0: # no intermediate determinants
         return numpy.zeros((norb,norb,norb,norb))
     ades_index = cistring.gen_des_str_index(range(norb), neleca+1)
@@ -179,7 +178,7 @@ def make_rdm2_baab(fcivec, norb, nelec):
 # size of intermediate determinants (norb,neleca-1;norb,nelecb+1)
 def _make_rdm2_abba(fcivec, norb, nelec):
     fcivec = numpy.asarray(fcivec, order='C')
-    neleca, nelecb = _unpack(nelec)
+    neleca, nelecb = _unpack_nelec(nelec)
     if nelecb == norb or neleca == 0: # no intermediate determinants
         return numpy.zeros((norb,norb,norb,norb))
     acre_index = cistring.gen_cre_str_index(range(norb), neleca-1)
@@ -209,7 +208,7 @@ def make_rdm2_abba(fcivec, norb, nelec):
 def contract_ss(fcivec, norb, nelec):
     '''Contract spin square operator with FCI wavefunction :math:`S^2 |CI>`
     '''
-    neleca, nelecb = _unpack(nelec)
+    neleca, nelecb = _unpack_nelec(nelec)
     na = cistring.num_strings(norb, neleca)
     nb = cistring.num_strings(norb, nelecb)
     fcivec = fcivec.reshape(na,nb)
@@ -256,23 +255,25 @@ def contract_ss(fcivec, norb, nelec):
             signb = bindex[:,i,1]
             maska = numpy.where(signa!=0)[0]
             maskb = numpy.where(signb!=0)[0]
-            ida = aindex[maska,i,0]
-            idb = bindex[maskb,i,0]
-            citmp = pyscf.lib.take_2d(fcivec, maska, maskb)
-            citmp = numpy.einsum('i,j,ij->ij', signa[maska], signb[maskb], citmp)
-            #: t1[ida.reshape(-1,1),idb] += citmp
-            pyscf.lib.takebak_2d(t1, citmp, ida, idb)
+            addra = aindex[maska,i,0]
+            addrb = bindex[maskb,i,0]
+            citmp = lib.take_2d(fcivec, maska, maskb)
+            citmp *= signa[maska].reshape(-1,1)
+            citmp *= signb[maskb]
+            #: t1[addra.reshape(-1,1),addrb] += citmp
+            lib.takebak_2d(t1, citmp, addra, addrb)
         for i in range(norb):
             signa = aindex[:,i,1]
             signb = bindex[:,i,1]
             maska = numpy.where(signa!=0)[0]
             maskb = numpy.where(signb!=0)[0]
-            ida = aindex[maska,i,0]
-            idb = bindex[maskb,i,0]
-            citmp = pyscf.lib.take_2d(t1, ida, idb)
-            citmp = numpy.einsum('i,j,ij->ij', signa[maska], signb[maskb], citmp)
+            addra = aindex[maska,i,0]
+            addrb = bindex[maskb,i,0]
+            citmp = lib.take_2d(t1, addra, addrb)
+            citmp *= signa[maska].reshape(-1,1)
+            citmp *= signb[maskb]
             #: ci1[maska.reshape(-1,1), maskb] += citmp
-            pyscf.lib.takebak_2d(ci1, citmp, maska, maskb)
+            lib.takebak_2d(ci1, citmp, maska, maskb)
 
     ci1 = numpy.zeros((na,nb))
     trans(ci1, ades, bcre, neleca-1, nelecb+1) # S+*S-
@@ -281,14 +282,16 @@ def contract_ss(fcivec, norb, nelec):
     ci1 += (neleca-nelecb)**2*.25*fcivec
     return ci1
 
-
-def _unpack(nelec):
-    if isinstance(nelec, (int, numpy.number)):
-        nelecb = nelec//2
-        neleca = nelec - nelecb
-        return neleca, nelecb
+def _unpack_nelec(nelec, spin=None):
+    if spin is None:
+        spin = 0
     else:
-        return nelec
+        nelec = int(numpy.sum(nelec))
+    if isinstance(nelec, (int, numpy.number)):
+        nelecb = (nelec-spin)//2
+        neleca = nelec - nelecb
+        nelec = neleca, nelecb
+    return nelec
 
 
 if __name__ == '__main__':

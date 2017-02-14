@@ -9,7 +9,7 @@ from pyscf import lib
 from pyscf.lib import logger
 from pyscf.scf import hf
 from pyscf.scf import _vhf
-import pyscf.scf.chkfile
+from pyscf.scf import chkfile
 
 
 def init_guess_by_minao(mol):
@@ -32,7 +32,7 @@ def init_guess_by_atom(mol):
 
 def init_guess_by_chkfile(mol, chkfile_name, project=True):
     from pyscf.scf import addons
-    chk_mol, scf_rec = pyscf.scf.chkfile.load_scf(chkfile_name)
+    chk_mol, scf_rec = chkfile.load_scf(chkfile_name)
 
     def fproj(mo):
         if project:
@@ -217,10 +217,10 @@ def get_grad(mo_coeff, mo_occ, fock_ao):
     viridxa = ~occidxa
     viridxb = ~occidxb
 
-    ga = reduce(numpy.dot, (mo_coeff[0][:,viridxa].T.conj(), fock_ao[0],
-                            mo_coeff[0][:,occidxa]))
-    gb = reduce(numpy.dot, (mo_coeff[1][:,viridxb].T.conj(), fock_ao[1],
-                            mo_coeff[1][:,occidxb]))
+    ga = reduce(numpy.dot, (mo_coeff[0][:,viridxa].T, fock_ao[0].T,
+                            mo_coeff[0][:,occidxa].conj()))
+    gb = reduce(numpy.dot, (mo_coeff[1][:,viridxb].T, fock_ao[1].T,
+                            mo_coeff[1][:,occidxb].conj()))
     return numpy.hstack((ga.ravel(), gb.ravel()))
 
 def energy_elec(mf, dm=None, h1e=None, vhf=None):
@@ -465,7 +465,7 @@ def canonicalize(mf, mo_coeff, mo_occ, fock=None):
             f1 = reduce(numpy.dot, (orb.T.conj(), fock, orb))
             e, c = scipy.linalg.eigh(f1)
             es[idx] = e
-            cs[:,idx] = numpy.dot(mo_coeff[:,idx], c)
+            cs[:,idx] = numpy.dot(orb, c)
     mo = numpy.empty_like(mo_coeff)
     mo_e = numpy.empty(mo_occ.shape)
     eig_(fock[0], mo_coeff[0], occidxa, mo_e[0], mo[0])
@@ -558,9 +558,9 @@ def dip_moment(mol, dm, unit_symbol='Debye', verbose=logger.NOTE):
 
     .. math::
 
-        \mu_x = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|x|\mu) + \sum_A Z_A X_A
-        \mu_y = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|y|\mu) + \sum_A Z_A Y_A
-        \mu_z = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|z|\mu) + \sum_A Z_A Z_A
+        \mu_x = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|x|\mu) + \sum_A Q_A X_A\\
+        \mu_y = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|y|\mu) + \sum_A Q_A Y_A\\
+        \mu_z = -\sum_{\mu}\sum_{\nu} P_{\mu\nu}(\nu|z|\mu) + \sum_A Q_A Z_A
 
     where :math:`\mu_x, \mu_y, \mu_z` are the x, y and z components of dipole
     moment
@@ -748,4 +748,4 @@ def _makevhf(vj, vk):
     vj = vj[0] + vj[1]
     v_a = vj - vk[0]
     v_b = vj - vk[1]
-    return pyscf.lib.asarray((v_a,v_b))
+    return lib.asarray((v_a,v_b))

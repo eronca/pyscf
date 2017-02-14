@@ -7,7 +7,7 @@ import tempfile
 from functools import reduce
 import warnings
 import numpy
-import pyscf.lib
+from pyscf import lib
 from pyscf.lib import logger
 from pyscf import ao2mo
 
@@ -25,7 +25,7 @@ t2[i,j,a,b] = (ia|jb) / D_ij^ab
 def kernel(mp, mo_energy, mo_coeff, verbose=logger.NOTE):
     nocc = mp.nocc
     nvir = mp.nmo - nocc
-    eia = pyscf.lib.direct_sum('i-a->ia', mo_energy[:nocc], mo_energy[nocc:])
+    eia = lib.direct_sum('i-a->ia', mo_energy[:nocc], mo_energy[nocc:])
     t2 = numpy.empty((nocc,nocc,nvir,nvir))
     emp2 = 0
 
@@ -33,7 +33,7 @@ def kernel(mp, mo_energy, mo_coeff, verbose=logger.NOTE):
         for i in range(nocc):
             gi = numpy.asarray(ovov[i*nvir:(i+1)*nvir])
             gi = gi.reshape(nvir,nocc,nvir).transpose(1,0,2)
-            t2[i] = gi/pyscf.lib.direct_sum('jb+a->jba', eia, eia[i])
+            t2[i] = gi/lib.direct_sum('jb+a->jba', eia, eia[i])
             # 2*ijab-ijba
             theta = gi*2 - gi.transpose(0,2,1)
             emp2 += numpy.einsum('jab,jab', t2[i], theta)
@@ -122,7 +122,7 @@ def make_rdm2(mp, t2, verbose=logger.NOTE):
     return dm2
 
 
-class MP2(pyscf.lib.StreamObject):
+class MP2(lib.StreamObject):
     def __init__(self, mf):
         self.mol = mf.mol
         self._scf = mf
@@ -164,11 +164,18 @@ class MP2(pyscf.lib.StreamObject):
         co = mo_coeff[:,:nocc]
         cv = mo_coeff[:,nocc:]
         mem_incore, mem_outcore, mem_basic = _mem_usage(nocc, nvir)
-        mem_now = pyscf.lib.current_memory()[0]
+        mem_now = lib.current_memory()[0]
         if mem_now < mem_basic:
             warnings.warn('%s: Not enough memory. Available mem %s MB, required mem %s MB\n' %
                           (self.ao2mo, mem_now, mem_basic))
-        if (self._scf._eri is not None and
+        if hasattr(self._scf, 'with_df') and self._scf.with_df:
+            # To handle the PBC or custom 2-electron with 3-index tensor.
+            # Call dfmp2.MP2 for efficient DF-MP2 implementation.
+            log.warn('MP2 detected DF being bound to the HF object. '
+                     '(ia|jb) is computed based on the DF 3-tensor integrals.\n'
+                     'You can switch to dfmp2.MP2 for the DF-MP2 implementation')
+            eri = self._scf.with_df.ao2mo((co,cv,co,cv))
+        elif (self._scf._eri is not None and
             mem_incore+mem_now < self.max_memory or
             self.mol.incore_anyway):
             if self._scf._eri is None:
@@ -178,7 +185,7 @@ class MP2(pyscf.lib.StreamObject):
             eri = ao2mo.incore.general(eri, (co,cv,co,cv))
         else:
             max_memory = max(2000, self.max_memory*.9-mem_now)
-            erifile = tempfile.NamedTemporaryFile()
+            erifile = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
             ao2mo.outcore.general(self.mol, (co,cv,co,cv), erifile.name,
                                   max_memory=max_memory, verbose=self.verbose)
             eri = erifile
@@ -240,9 +247,11 @@ if __name__ == '__main__':
     print(numpy.allclose(reduce(numpy.dot, (mf.mo_coeff, pt.make_rdm1(),
                                             mf.mo_coeff.T)), rdm1))
 
-    h1e = reduce(numpy.dot, (mf.mo_coeff, mf.get_hcore(), mf.mo_coeff))
     eri = ao2mo.restore(1, ao2mo.kernel(mf._eri, mf.mo_coeff), nmo)
     rdm2 = pt.make_rdm2()
-    print(numpy.dot(rdm1.flatten(), h1e.flatten()))      # FIXME
-    print(.5 * numpy.dot(eri.flatten(), rdm2.flatten())) # -0.204019976381
+    e1 = numpy.einsum('ij,ij', mf.make_rdm1(), mf.get_hcore())
+    e2 = .5 * numpy.dot(eri.flatten(), rdm2.flatten())
+    print(e1+e2+mf.energy_nuc()-mf.e_tot - -0.204019976381)
 
+    pt = MP2(scf.density_fit(mf))
+    print(pt.kernel()[0] - -0.204254500454)

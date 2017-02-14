@@ -1,12 +1,84 @@
+PySCF 1.3 beta (2017-02-?)
+--------------------------
+* Added
+  - sf-X2C for PBC Hamiltonian
+  - Overlap of two CI wavefunctions over different orbital bases
+  - EOM-CCSD for user guess, Koopmans' excitations, etc
+  - approximate EOM-CCSD (MBPT2 ground state and partitioned EOM Hbar)
+  - AVAS method for constructing mcscf active space
+* Improved
+  - better memory management for EOM-CCSD
+  - memory usage of the non-symmetric Davidson solver in EOM-CCSD
+
+
+PySCF 1.3 alpha-2 (2017-01-04)
+---------------------------
+* Added
+  - Supports for 1D, 2D PBC systems
+* Improved
+  - PBC integral transformation
+  - CASSCF state-average interface to handle different spins of sub-solver
+  - Numerical stability for Davidson diagonalization solver
+  - FCI numerical stability with multithreading
+  - FCI with spatial symmetry
+* Bugfix
+  - X2C to use custom basis for X matrix
+
+
+PySCF 1.3 alpha-1 (2016-12-04)
+---------------------------
+* Added
+  - Quantum chemistry ECP for solid
+  - AO-direct CCSD
+  - CI coefficients transformation for one-particle basis rotation
+  - CIAH second order SCF solver for PBC KRHF and KUHF
+  - CISD and CISD 1, 2-particle density matrices
+  - Selected-CI and Selected-CI 1, 2-particle density matrices
+  - Smearing for PBC mean-field calculation
+  - PBC density fitting
+* Improved
+  - Optimized CCSD(T)
+  - Change the default kpts mesh (to always include gamma point)
+  - PBC repeated images used by lattice summation
+
+
+PySCF 1.2.2
+------------------------
+* Bugfix
+  - GTO normalization in molden file
+
+
+PySCF 1.2.1 (2017-01-26)
+------------------------
+* Added
+  - transition metal BFD basis
+  - script to fix dylib library dependence for Mac
+* Bugfix
+  - active space 1pdm in mc chkfile if natural orbitals are required
+  - dmrg example
+  - state-average dmrgci interface
+  - analytic GTO-PW integral
+  - for population analysis when ecp is presented.
+  - for mcscf state-specific function to support ground state as the target state
+  - get_coulG round-off bug
+  - unit cell size estimation for non-orth crystals
+  - lib.norm function for complex vector
+
+
+PySCF 1.2 (2016-11-07)
+----------------------
+
+
 PySCF 1.2 beta (2016-09-13)
 ---------------------------
 * Added
   - State average CASSCF helper function for mixed spin/spatial-symmetry FCI solvers
   - Example for transition dipole momentum
   - U-CCSD (based on spin-orbital formulation)
+  - IP/EA/EE-EOM-CCSD
   - Function to dump CASSCF canonical orbitals in molden format
   - Analytical Fourier transformation for AO and AO product
-  - Iterative augmented hessian (IAH) orbital optimizer
+  - Co-iterative augmented hessian (CIAH) orbital optimizer
   - Optimized einsum function using numpy.tensordot function
   - Burkatzi-Filippi-Dolg pseudo potential
   - FCI solver to support integrals which do not have 8-fold symmetry
@@ -18,7 +90,7 @@ PySCF 1.2 beta (2016-09-13)
   - Orbitals space symmetrization
   - CASSCF subspace (core, active, external) symmetrization
   - Created X2C object to hold X2C functions and parameters
-  - Boys, Edmiston, Pipek-Mezey Localization with general IAH optimizer
+  - Boys, Edmiston, Pipek-Mezey Localization with general CIAH optimizer
   - PBC integrals to handle ghost atom in PBC calculation
   - Asynchronized IO to overlap integration and IO for ao2mo integral transformation
   - SCF gradients to eliminate the symmetry forbidden matrix elements
@@ -35,7 +107,7 @@ PySCF 1.2 beta (2016-09-13)
 PySCF 1.2 alpha (2016-8-5)
 --------------------------
 * Added
-  - MDF method for molecule and PBC 2-election integrals
+  - MDF (mixed density fitting) method for molecule and PBC 2-election integrals
   - GAMESS WFN wirter
   - Periodic boundary condition (PBC) for gamma point RHF, UHF, RKS, UKS
   - PBC RHF, UHF, RKS, UKS with k-point sampling
@@ -43,7 +115,7 @@ PySCF 1.2 alpha (2016-8-5)
   - PBC MO integral transformation
   - PBC density fitting
   - IC-MPS-PT2
-  - DMET method to generate CASSCF active space
+  - DMET decomposition to generate CASSCF active space
   - FCI electron-phonon coupling solver
   - meta-GGA for ground state DFT
 
@@ -75,7 +147,7 @@ Version 1.1 beta (2016-4-11):
   - Orbital occupancy for ROHF with symmetry
   - CASSCF initializing from x2c-UHF
   - ECP accuracy
-  - COSMO and QMMM interface
+  - QMMM interface
 
 
 Version 1.1 alpha-2 (2016-3-8):
@@ -104,7 +176,6 @@ Version 1.1 alpha-1 (2016-2-8):
   - DFT gradients
   - TDDFT and TDDFT gradients
   - DFT NMR
-  - COSMO interface
   - QM/MM interface
   - Pipek-Mezey localization
   - DF-CASSCF

@@ -8,31 +8,38 @@
 import sys
 import time
 import numpy
+from pyscf import lib
 from pyscf.lib import logger
-from pyscf.scf import iah
+from pyscf.scf import ciah
+from pyscf.lo import orth
 
 
 def kernel(localizer, mo_coeff=None, callback=None, verbose=logger.NOTE):
     if mo_coeff is None:
-        mo_coeff = localizer.mo_coeff
+        mo_coeff = numpy.asarray(localizer.mo_coeff, order='C')
     else:
+        mo_coeff = numpy.asarray(mo_coeff, order='C')
         localizer.mo_coeff = mo_coeff
+
+    if localizer.verbose >= logger.WARN:
+        localizer.check_sanity()
+    localizer.dump_flags()
 
     cput0 = (time.clock(), time.time())
     if isinstance(verbose, logger.Logger):
         log = verbose
     else:
-        log = logger.Logger(sys.stdout, verbose)
+        log = logger.Logger(localizer.stdout, verbose)
     if localizer.conv_tol_grad is None:
         conv_tol_grad = numpy.sqrt(localizer.conv_tol*.1)
         log.info('Set conv_tol_grad to %g', conv_tol_grad)
     else:
         conv_tol_grad = localizer.conv_tol_grad
 
-    u0 = localizer.init_guess()
-    rotaiter = iah.rotate_orb_cc(localizer, u0, conv_tol_grad, verbose=log)
+    u0 = localizer.get_init_guess(localizer.init_guess)
+    rotaiter = ciah.rotate_orb_cc(localizer, u0, conv_tol_grad, verbose=log)
     u, g_orb, stat = next(rotaiter)
-    cput1 = log.timer('initializing IAH', *cput0)
+    cput1 = log.timer('initializing CIAH', *cput0)
 
     tot_kf = stat.tot_kf
     tot_hop = stat.tot_hop
@@ -40,11 +47,11 @@ def kernel(localizer, mo_coeff=None, callback=None, verbose=logger.NOTE):
     e_last = 0
     for imacro in range(localizer.max_cycle):
         norm_gorb = numpy.linalg.norm(g_orb)
-        u0 = numpy.dot(u0, u)
+        u0 = lib.dot(u0, u)
         e = localizer.cost_function(u0)
         e_last, de = e, e-e_last
 
-        log.info('macro= %d  f(x)= %g  delta_f= %g  |g|= %g  %d Hx %d KF',
+        log.info('macro= %d  f(x)= %.14g  delta_f= %g  |g|= %g  %d Hx %d KF',
                  imacro+1, e, de, norm_gorb, stat.tot_hop, stat.tot_kf+1)
         cput1 = log.timer('cycle= %d'%(imacro+1), *cput1)
 
@@ -62,10 +69,10 @@ def kernel(localizer, mo_coeff=None, callback=None, verbose=logger.NOTE):
         tot_hop += stat.tot_hop
 
     rotaiter.close()
-    log.info('macro X = %d  f(x)= %g  |g|= %g  %d intor %d Hx %d KF',
+    log.info('macro X = %d  f(x)= %.14g  |g|= %g  %d intor %d Hx %d KF',
              imacro+1, e, norm_gorb,
              (imacro+1)*2, tot_hop, tot_kf+imacro+1)
-    localizer.mo_coeff = numpy.dot(mo_coeff, u0)
+    localizer.mo_coeff = lib.dot(mo_coeff, u0)
     return localizer.mo_coeff
 
 
@@ -74,25 +81,61 @@ def dipole_integral(mol, mo_coeff):
     # Set to charge center for physical significance of <r>
     charge_center = numpy.einsum('z,zx->x', mol.atom_charges(), mol.atom_coords())
     mol.set_common_orig(charge_center)
-    dip = numpy.asarray([reduce(numpy.dot, (mo_coeff.T, x, mo_coeff))
+    dip = numpy.asarray([reduce(lib.dot, (mo_coeff.T, x, mo_coeff))
                          for x in mol.intor_symmetric('cint1e_r_sph', comp=3)])
     return dip
 
-class Boys(iah.IAHOptimizer):
+def atomic_init_guess(mol, mo_coeff):
+    s = mol.intor_symmetric('cint1e_ovlp_sph')
+    c = orth.orth_ao(mol, s=s)
+    mo = reduce(numpy.dot, (c.T, s, mo_coeff))
+    nmo = mo_coeff.shape[1]
+# Find the AOs which have largest overlap to MOs
+    idx = numpy.argsort(numpy.einsum('pi,pi->p', mo, mo))
+    nmo = mo.shape[1]
+    idx = idx[-nmo:]
+    u, w, vh = numpy.linalg.svd(mo[idx])
+    return lib.dot(vh, u.T)
+
+class Boys(ciah.CIAHOptimizer):
     def __init__(self, mol, mo_coeff=None):
-        iah.IAHOptimizer.__init__(self)
+        ciah.CIAHOptimizer.__init__(self)
         self.mol = mol
-        self.conv_tol = 1e-9
+        self.stdout = mol.stdout
+        self.verbose = mol.verbose
+        self.conv_tol = 1e-7
         self.conv_tol_grad = None
         self.max_cycle = 100
         self.max_iters = 10
         self.max_stepsize = .05
         self.ah_trust_region = 3
+        self.ah_start_tol = 1e9
+        self.init_guess = 'atomic'
 
-        self.mo_coeff = mo_coeff
+        self.mo_coeff = numpy.asarray(mo_coeff, order='C')
+        self._keys = set(self.__dict__.keys())
+
+    def dump_flags(self):
+        log = logger.Logger(self.stdout, self.verbose)
+        log.info('\n')
+        log.info('******** %s flags ********', self.__class__)
+        log.info('conv_tol = %s'       ,self.conv_tol       )
+        log.info('conv_tol_grad = %s'  ,self.conv_tol_grad  )
+        log.info('max_cycle = %s'      ,self.max_cycle      )
+        log.info('max_stepsize = %s'   ,self.max_stepsize   )
+        log.info('max_iters = %s'      ,self.max_iters      )
+        log.info('kf_interval = %s'    ,self.kf_interval    )
+        log.info('kf_trust_region = %s',self.kf_trust_region)
+        log.info('ah_start_tol = %s'   ,self.ah_start_tol   )
+        log.info('ah_start_cycle = %s' ,self.ah_start_cycle )
+        log.info('ah_level_shift = %s' ,self.ah_level_shift )
+        log.info('ah_conv_tol = %s'    ,self.ah_conv_tol    )
+        log.info('ah_lindep = %s'      ,self.ah_lindep      )
+        log.info('ah_max_cycle = %s'   ,self.ah_max_cycle   )
+        log.info('ah_trust_region = %s',self.ah_trust_region)
 
     def gen_g_hop(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+        mo_coeff = lib.dot(self.mo_coeff, u)
         dip = dipole_integral(self.mol, mo_coeff)
         g0 = numpy.einsum('xii,xip->pi', dip, dip)
         g = -self.pack_uniq_var(g0-g0.T) * 2
@@ -121,6 +164,7 @@ class Boys(iah.IAHOptimizer):
         g0 = g0 + g0.T
         def h_op(x):
             x = self.unpack_uniq_var(x)
+            norb = x.shape[0]
             #:hx = numpy.einsum('qp,xjj,xjq->pj', x, dip, dip)
             #:hx+= numpy.einsum('qp,xqq,xjq->pj', x, dip, dip)
             #:hx+= numpy.einsum('jk,xkk,xkp->pj', x, dip, dip)
@@ -134,34 +178,47 @@ class Boys(iah.IAHOptimizer):
             #:hx-= numpy.einsum('jk,xjj,xkp->pj', x, dip, dip) * 2
             #:hx-= numpy.einsum('jk,xkj,xjp->pj', x, dip, dip) * 2
             #:return -self.pack_uniq_var(hx)
-            hx = numpy.einsum('iq,qp->pi', g0, x)
-            hx+= numpy.einsum('qi,xiq,xip->pi', x, dip, dip) * 2
-            hx-= numpy.einsum('qp,xpp,xiq->pi', x, dip, dip) * 2
-            hx-= numpy.einsum('qp,xip,xpq->pi', x, dip, dip) * 2
+            #:hx = numpy.einsum('iq,qp->pi', g0, x)
+            hx = lib.dot(x.T, g0.T)
+            #:hx+= numpy.einsum('qi,xiq,xip->pi', x, dip, dip) * 2
+            hx+= numpy.einsum('xip,xi->pi', dip, numpy.einsum('qi,xiq->xi', x, dip)) * 2
+            #:hx-= numpy.einsum('qp,xpp,xiq->pi', x, dip, dip) * 2
+            hx-= numpy.einsum('xpp,xip->pi', dip,
+                              lib.dot(dip.reshape(-1,norb), x).reshape(3,norb,norb)) * 2
+            #:hx-= numpy.einsum('qp,xip,xpq->pi', x, dip, dip) * 2
+            hx-= numpy.einsum('xip,xp->pi', dip, numpy.einsum('qp,xpq->xp', x, dip)) * 2
             return -self.pack_uniq_var(hx-hx.T)
 
         return g, h_op, h_diag
 
-    def get_grad(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+    def get_grad(self, u=None):
+        if u is None: u = numpy.eye(self.mo_coeff.shape[1])
+        mo_coeff = lib.dot(self.mo_coeff, u)
         dip = dipole_integral(self.mol, mo_coeff)
         g0 = numpy.einsum('xii,xip->pi', dip, dip)
         g = -self.pack_uniq_var(g0-g0.T) * 2
         return g
 
-    def cost_function(self, u):
-        mo_coeff = numpy.dot(self.mo_coeff, u)
+    def cost_function(self, u=None):
+        if u is None: u = numpy.eye(self.mo_coeff.shape[1])
+        mo_coeff = lib.dot(self.mo_coeff, u)
         dip = dipole_integral(self.mol, mo_coeff)
-        return numpy.einsum('xii,xii->', dip, dip)
+        r2 = self.mol.intor_symmetric('cint1e_r2_sph')
+        r2 = numpy.einsum('pi,pi->', mo_coeff, lib.dot(r2, mo_coeff))
+        val = r2 - numpy.einsum('xii,xii->', dip, dip)
+        return val * 2
 
-    def init_guess(self):
-        nmo = self.mo_coeff.shape[1]
-        u0 = numpy.eye(nmo)
-        if numpy.linalg.norm(self.get_grad(u0)) < 1e-5:
-            # Add noise to kick initial guess out of saddle point
-            dr = numpy.cos(numpy.arange((nmo-1)*nmo//2)) * 1e-3
-            u0 = self.extract_rotation(dr)
-        return u0
+    def get_init_guess(self, key='atomic'):
+        if isinstance(key, str) and key.lower() == 'atomic':
+            return atomic_init_guess(self.mol, self.mo_coeff)
+        else:
+            nmo = self.mo_coeff.shape[1]
+            u0 = numpy.eye(nmo)
+            if numpy.linalg.norm(self.get_grad(u0)) < 1e-5:
+                # Add noise to kick initial guess out of saddle point
+                dr = numpy.cos(numpy.arange((nmo-1)*nmo//2)) * 1e-3
+                u0 = self.extract_rotation(dr)
+            return u0
 
     kernel = kernel
 

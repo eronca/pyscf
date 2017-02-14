@@ -257,6 +257,8 @@ def general(mol, mo_coeffs, erifile, dataname='eri_mo', tmpdir=None,
               float(nij_pair)*nkl_pair*comp, nij_pair*nkl_pair*comp*8/1e6)
 
 # transform e1
+    if tmpdir is None:
+        tmpdir = lib.param.TMPDIR
     swapfile = tempfile.NamedTemporaryFile(dir=tmpdir)
     fswap = h5py.File(swapfile.name, 'w')
     half_e1(mol, mo_coeffs, fswap, intor, aosym, comp, max_memory, ioblk_size,
@@ -265,7 +267,7 @@ def general(mol, mo_coeffs, erifile, dataname='eri_mo', tmpdir=None,
     time_1pass = log.timer('AO->MO transformation for %s 1 pass'%intor,
                            *time_0pass)
 
-    ioblk_size = max(max_memory*.2, ioblk_size)
+    ioblk_size = max(max_memory//4, ioblk_size)
     iobuflen = guess_e2bufsize(ioblk_size, nij_pair, max(nao_pair,nkl_pair))[0]
     reading_frame = [numpy.empty((iobuflen,nao_pair)),
                      numpy.empty((iobuflen,nao_pair))]
@@ -499,7 +501,7 @@ def _transpose_to_h5g(h5group, key, dat, blksize, chunks=None):
         dset[col0:col1] = lib.transpose(dat[:,col0:col1])
 
 def full_iofree(mol, mo_coeff, intor='cint2e_sph', aosym='s4', comp=1,
-                verbose=logger.WARN, compact=True):
+                max_memory=2000, ioblk_size=IOBLK_SIZE, verbose=logger.WARN, compact=True):
     r'''Transfer arbitrary spherical AO integrals to MO integrals for given orbitals
     This function is a wrap for :func:`ao2mo.outcore.general`.  It's not really
     IO free.  The returned MO integrals are held in memory.  For backward compatibility,
@@ -582,10 +584,11 @@ def full_iofree(mol, mo_coeff, intor='cint2e_sph', aosym='s4', comp=1,
     >>> print(eri1.shape)
     (3, 100, 55)
     '''
-    erifile = tempfile.NamedTemporaryFile()
+    erifile = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
     with h5py.File(erifile.name, 'w') as feri:
         general(mol, (mo_coeff,)*4, feri, dataname='eri_mo',
                 intor=intor, aosym=aosym, comp=comp,
+                max_memory=max_memory, ioblk_size=ioblk_size,
                 verbose=verbose, compact=compact)
         eri = numpy.asarray(feri['eri_mo'])
         for key in feri.keys():
@@ -593,7 +596,7 @@ def full_iofree(mol, mo_coeff, intor='cint2e_sph', aosym='s4', comp=1,
         return eri
 
 def general_iofree(mol, mo_coeffs, intor='cint2e_sph', aosym='s4', comp=1,
-                   verbose=logger.WARN, compact=True):
+                   max_memory=2000, ioblk_size=IOBLK_SIZE, verbose=logger.WARN, compact=True):
     r'''For the given four sets of orbitals, transfer arbitrary spherical AO
     integrals to MO integrals on the fly.  This function is a wrap for
     :func:`ao2mo.outcore.general`.  It's not really IO free.  The returned MO
@@ -669,10 +672,11 @@ def general_iofree(mol, mo_coeffs, intor='cint2e_sph', aosym='s4', comp=1,
     >>> print(eri1.shape)
     (3, 100, 55)
     '''
-    erifile = tempfile.NamedTemporaryFile()
+    erifile = tempfile.NamedTemporaryFile(dir=lib.param.TMPDIR)
     with h5py.File(erifile.name, 'w') as feri:
         general(mol, mo_coeffs, feri, dataname='eri_mo',
                 intor=intor, aosym=aosym, comp=comp,
+                max_memory=max_memory, ioblk_size=ioblk_size,
                 verbose=verbose, compact=compact)
         eri = numpy.asarray(feri['eri_mo'])
         for key in feri.keys():
@@ -693,10 +697,10 @@ def guess_e1bufsize(max_memory, ioblk_size, nij_pair, nao_pair, comp):
 # part of the max_memory is used to hold the AO integrals.  The iobuf is the
 # buffer to temporary hold the transformed integrals before streaming to disk.
 # iobuf is then divided to small blocks (ioblk_words) and streamed to disk.
-    iobuf_words = max(int(mem_words*.1), IOBUF_WORDS_PREFER)
+    iobuf_words = max(int(mem_words//6), IOBUF_WORDS_PREFER)
     ioblk_words = int(min(ioblk_size*1e6/8, iobuf_words))
 
-    e1buflen = int(min(iobuf_words/(comp*nij_pair), mem_words*.8/(comp*nao_pair)))
+    e1buflen = int(min(iobuf_words/(comp*nij_pair), mem_words*.66/(comp*nao_pair)))
     e1buflen = max(e1buflen, IOBUF_ROW_MIN)
     return e1buflen, mem_words, iobuf_words, ioblk_words
 
@@ -734,14 +738,15 @@ def guess_shell_ranges(mol, aosym, max_iobuf, max_aobuf=None, ao_loc=None,
                 dj = ao_loc[j+1] - ao_loc[j]
                 lstdij.append(di*dj)
 
-    ijsh_range = balance_segs(lstdij, max_iobuf)
+    dij_loc = numpy.append(0, numpy.cumsum(lstdij))
+    ijsh_range = balance_partition(dij_loc, max_iobuf)
 
     if max_aobuf is not None:
         max_aobuf = max(1, max_aobuf)
         def div_each_iobuf(ijstart, ijstop, buflen):
 # to fill each iobuf, AO integrals may need to be fill to aobuf several times
             return (ijstart, ijstop, buflen,
-                    balance_segs(lstdij, max_aobuf, ijstart, ijstop))
+                    balance_partition(dij_loc, max_aobuf, ijstart, ijstop))
         ijsh_range = [div_each_iobuf(*x) for x in ijsh_range]
     return ijsh_range
 
@@ -754,19 +759,22 @@ def _stand_sym_code(sym):
         return 's' + sym
 
 def balance_segs(segs_lst, blksize, start_id=0, stop_id=None):
+    loc = numpy.append(0, numpy.cumsum(segs_lst))
+    return balance_partition(loc, blksize, start_id, stop_id)
+def balance_partition(ao_loc, blksize, start_id=0, stop_id=None):
     if stop_id is None:
-        stop_id = start_id + len(segs_lst)
-    end_id = start_id + 1
-    grouped = [(start_id, end_id, segs_lst[start_id])]
-    while end_id < stop_id:
-        start_id, ijstop, buflen = grouped[-1]
-        dij = segs_lst[end_id]
-        if buflen + dij > blksize:
-            grouped.append((end_id, end_id+1, dij))
-        else:
-            grouped[-1] = (start_id, end_id+1, buflen+dij)
-        end_id += 1
-    return grouped
+        stop_id = len(ao_loc) - 1
+    else:
+        stop_id = min(stop_id, len(ao_loc)-1)
+    tasks = []
+    for i in range(start_id+1, stop_id):
+        if ao_loc[i+1]-ao_loc[start_id] > blksize:
+            tasks.append((start_id, i, ao_loc[i]-ao_loc[start_id]))
+            start_id = i
+    if start_id != ao_loc[stop_id]:
+        tasks.append((start_id, stop_id, ao_loc[stop_id]-ao_loc[start_id]))
+    return tasks
+
 
 
 if __name__ == '__main__':

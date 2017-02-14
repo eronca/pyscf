@@ -13,7 +13,7 @@ import sys
 from functools import reduce
 import numpy
 import scipy.linalg
-import pyscf.lib.parameters
+from pyscf import lib
 from pyscf.gto import mole
 from pyscf.lo import orth
 from pyscf.lib import logger
@@ -204,32 +204,33 @@ def _nao_sub(mol, pre_occ, pre_nao, s=None):
     cnao = numpy.empty((nbf,nbf))
 
     if core_lst:
-        c = pre_nao[:,core_lst]
-        s1 = reduce(numpy.dot, (c.T, s, c))
-        cnao[:,core_lst] = c1 = numpy.dot(c, orth.lowdin(s1))
-        c = pre_nao[:,val_lst]
-        c -= reduce(numpy.dot, (c1, c1.T, s, c))
+        c = pre_nao[:,core_lst].copy()
+        s1 = reduce(lib.dot, (c.T, s, c))
+        cnao[:,core_lst] = c1 = lib.dot(c, orth.lowdin(s1))
+        c = pre_nao[:,val_lst].copy()
+        c -= reduce(lib.dot, (c1, c1.T, s, c))
     else:
         c = pre_nao[:,val_lst]
 
-    s1 = reduce(numpy.dot, (c.T, s, c))
-    wt = pre_occ[val_lst]
-    cnao[:,val_lst] = numpy.dot(c, orth.weight_orth(s1, wt))
+    if val_lst:
+        s1 = reduce(lib.dot, (c.T, s, c))
+        wt = pre_occ[val_lst]
+        cnao[:,val_lst] = lib.dot(c, orth.weight_orth(s1, wt))
 
     if rydbg_lst:
         cvlst = core_lst + val_lst
-        c1 = cnao[:,cvlst]
-        c = pre_nao[:,rydbg_lst]
-        c -= reduce(numpy.dot, (c1, c1.T, s, c))
-        s1 = reduce(numpy.dot, (c.T, s, c))
-        cnao[:,rydbg_lst] = numpy.dot(c, orth.lowdin(s1))
-    snorm = numpy.linalg.norm(reduce(numpy.dot, (cnao.T, s, cnao)) - numpy.eye(nbf))
+        c1 = cnao[:,cvlst].copy()
+        c = pre_nao[:,rydbg_lst].copy()
+        c -= reduce(lib.dot, (c1, c1.T, s, c))
+        s1 = reduce(lib.dot, (c.T, s, c))
+        cnao[:,rydbg_lst] = lib.dot(c, orth.lowdin(s1))
+    snorm = numpy.linalg.norm(reduce(lib.dot, (cnao.T, s, cnao)) - numpy.eye(nbf))
     if snorm > 1e-9:
         logger.warn(mol, 'Weak orthogonality for localized orbitals %s', snorm)
     return cnao
 
 def _core_val_ryd_list(mol):
-    import pyscf.gto.ecp
+    from pyscf.gto.ecp import core_configuration
     count = numpy.zeros((mol.natm, 9), dtype=int)
     core_lst = []
     val_lst = []
@@ -237,12 +238,13 @@ def _core_val_ryd_list(mol):
     k = 0
     for ib in range(mol.nbas):
         ia = mol.bas_atom(ib)
-        nuc = mol.atom_charge(ia)
+# Avoid calling mol.atom_charge because we should include ECP core electrons here
+        nuc = mole._charge(mol.atom_symbol(ia))
         l = mol.bas_angular(ib)
         nc = mol.bas_nctr(ib)
         symb = mol.atom_symbol(ia)
         nelec_ecp = mol.atom_nelec_core(ia)
-        ecpcore = pyscf.gto.ecp.core_configuration(nelec_ecp)
+        ecpcore = core_configuration(nelec_ecp)
         coreshell = [int(x) for x in AOSHELL[nuc][0][::2]]
         cvshell = [int(x) for x in AOSHELL[nuc][1][::2]]
         for n in range(nc):

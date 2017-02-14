@@ -7,8 +7,7 @@ import tempfile
 import time
 from functools import reduce
 import numpy
-import pyscf.lib
-import pyscf.gto
+from pyscf import lib
 from pyscf.lib import logger
 import pyscf.ao2mo
 from pyscf import scf
@@ -40,17 +39,17 @@ def h1e_for_cas(casci, mo_coeff=None, ncas=None, ncore=None):
               mo_coeff[1][:,ncore[1]:ncore[1]+ncas])
 
     hcore = casci.get_hcore()
+    energy_core = casci._scf.energy_nuc()
     if mo_core[0].size == 0 and mo_core[1].size == 0:
         corevhf = (0,0)
-        energy_core = 0
     else:
         core_dm = (numpy.dot(mo_core[0], mo_core[0].T),
                    numpy.dot(mo_core[1], mo_core[1].T))
         corevhf = casci.get_veff(casci.mol, core_dm)
-        energy_core = numpy.einsum('ij,ji', core_dm[0], hcore[0]) \
-                    + numpy.einsum('ij,ji', core_dm[1], hcore[1]) \
-                    + numpy.einsum('ij,ji', core_dm[0], corevhf[0]) * .5 \
-                    + numpy.einsum('ij,ji', core_dm[1], corevhf[1]) * .5
+        energy_core += numpy.einsum('ij,ji', core_dm[0], hcore[0])
+        energy_core += numpy.einsum('ij,ji', core_dm[1], hcore[1])
+        energy_core += numpy.einsum('ij,ji', core_dm[0], corevhf[0]) * .5
+        energy_core += numpy.einsum('ij,ji', core_dm[1], corevhf[1]) * .5
     h1eff = (reduce(numpy.dot, (mo_cas[0].T, hcore[0]+corevhf[0], mo_cas[0])),
              reduce(numpy.dot, (mo_cas[1].T, hcore[1]+corevhf[1], mo_cas[1])))
     return h1eff, energy_core
@@ -81,16 +80,18 @@ def kernel(casci, mo_coeff=None, ci0=None, verbose=logger.NOTE):
     t1 = log.timer('integral transformation to CAS space', *t1)
 
     # FCI
-    e_cas, fcivec = casci.fcisolver.kernel(h1eff, eri_cas, ncas, nelecas,
-                                           ci0=ci0)
+    max_memory = max(400, casci.max_memory-lib.current_memory()[0])
+    e_tot, fcivec = casci.fcisolver.kernel(h1eff, eri_cas, ncas, nelecas,
+                                           ci0=ci0, verbose=log,
+                                           max_memory=max_memory,
+                                           ecore=energy_core)
 
     t1 = log.timer('FCI solver', *t1)
-    e_tot = e_cas + energy_core + casci.mol.energy_nuc()
-    log.timer('CASCI', *t0)
+    e_cas = e_tot - energy_core
     return e_tot, e_cas, fcivec
 
 
-class CASCI(pyscf.lib.StreamObject):
+class CASCI(lib.StreamObject):
     # nelecas is tuple of (nelecas_alpha, nelecas_beta)
     def __init__(self, mf, ncas, nelecas, ncore=None):
         #assert('UHF' == mf.__class__.__name__)
@@ -130,7 +131,7 @@ class CASCI(pyscf.lib.StreamObject):
         self._keys = set(self.__dict__.keys())
 
     def dump_flags(self):
-        log = pyscf.lib.logger.Logger(self.stdout, self.verbose)
+        log = lib.logger.Logger(self.stdout, self.verbose)
         log.info('')
         log.info('******** UHF-CASCI flags ********')
         nmo = self.mo_coeff[0].shape[1]
@@ -214,13 +215,40 @@ class CASCI(pyscf.lib.StreamObject):
             self.check_sanity()
         self.dump_flags()
 
-        self.e_tot, e_cas, self.ci = \
+        self.e_tot, self.e_cas, self.ci = \
                 kernel(self, mo_coeff, ci0=ci0, verbose=self.verbose)
+        log = logger.Logger(self.stdout, self.verbose)
+        if log.verbose >= logger.NOTE and hasattr(self.fcisolver, 'spin_square'):
+            ncore = self.ncore
+            ncas = self.ncas
+            mocas = (self.mo_coeff[0][:,ncore[0]:ncore[0]+ncas],
+                     self.mo_coeff[1][:,ncore[1]:ncore[1]+ncas])
+            mocore = (self.mo_coeff[0][:,:ncore[0]],
+                      self.mo_coeff[1][:,:ncore[1]])
+            ovlp_ao = self._scf.get_ovlp()
+            ss_core = self._scf.spin_square(mocore, ovlp_ao)
+            if isinstance(self.e_cas, (float, numpy.number)):
+                ss = fci.spin_op.spin_square(self.ci, self.ncas, self.nelecas,
+                                             mocas, ovlp_ao)
+                log.note('UCASCI E = %.15g  E(CI) = %.15g  S^2 = %.7f',
+                         self.e_tot, self.e_cas, ss[0]+ss_core[0])
+            else:
+                for i, e in enumerate(self.e_cas):
+                    ss = fci.spin_op.spin_square(self.ci[i], self.ncas, self.nelecas,
+                                                 mocas, ovlp_ao)
+                    log.note('UCASCI root %d  E = %.15g  E(CI) = %.15g  S^2 = %.7f',
+                             i, self.e_tot[i], e, ss[0]+ss_core[0])
+        else:
+            if isinstance(self.e_cas, (float, numpy.number)):
+                log.note('UCASCI E = %.15g  E(CI) = %.15g', self.e_tot, self.e_cas)
+            else:
+                for i, e in enumerate(self.e_cas):
+                    log.note('UCASCI root %d  E = %.15g  E(CI) = %.15g',
+                             i, self.e_tot[i], e)
         #if self.verbose >= logger.INFO:
         #    self.analyze(mo_coeff, self.ci, verbose=self.verbose)
-        logger.note(self, 'CASCI E = %.15g', self.e_tot)
         self._finalize()
-        return self.e_tot, e_cas, self.ci
+        return self.e_tot, self.e_cas, self.ci
 
     def _finalize(self):
         pass
@@ -269,13 +297,17 @@ class CASCI(pyscf.lib.StreamObject):
             for i,j in idx:
                 log.info('beta <mo-mcscf|mo-hf> %d  %d  %12.8f' % (i+1,j+1,s[i,j]))
 
-            ss = self.spin_square(ci, mo_coeff, self._scf.get_ovlp())
-            log.info('\nS^2 = %.7f  2S+1 = %.7f', ss[0], ss[1])
-
             log.info('\n** Largest CI components **')
-            log.info(' string alpha, string beta, CI coefficients')
-            for c,ia,ib in fci.addons.large_ci(ci, self.ncas, self.nelecas):
-                log.info('  %9s    %9s    %.12f', ia, ib, c)
+            if ci is not None and numpy.ndim(ci) >= 2:
+                if ci[0].ndim == 2:
+                    for i, state in enumerate(ci):
+                        log.info(' string alpha, string beta, state %d CI coefficients', i)
+                        for c,ia,ib in fci.addons.large_ci(state, self.ncas, self.nelecas):
+                            log.info('  %9s    %9s    %.12f', ia, ib, c)
+                else:
+                    log.info(' string alpha, string beta, CI coefficients')
+                    for c,ia,ib in fci.addons.large_ci(ci, self.ncas, self.nelecas):
+                        log.info('  %9s    %9s    %.12f', ia, ib, c)
         return dm1a, dm1b
 
     def spin_square(self, fcivec=None, mo_coeff=None, ovlp=None):
@@ -360,7 +392,8 @@ if __name__ == '__main__':
     m = scf.UHF(mol)
     ehf = m.scf()
     mc = CASCI(m, 9, (4,4))
+    mc.fcisolver.nroots = 2
     emc = mc.casci()[0]
     mc.analyze()
-    print(ehf, emc, emc-ehf)
-    print(emc - -227.948912536)
+    print(ehf, emc, emc[0]-ehf)
+    print(emc[0] - -227.948912536)

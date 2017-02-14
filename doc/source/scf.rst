@@ -1,5 +1,8 @@
-scf
-***
+:mod:`scf` --- Mean-field methods
+*********************************
+
+.. module:: scf
+   :synopsis: restricted and unrestricted, closed shell and open shell Hartree-Fock methods
 
 .. automodule:: pyscf.scf
  
@@ -29,12 +32,6 @@ Non-relativistic Hartree-Fock
    :members:
 
 .. automodule:: pyscf.scf.uhf_symm
-   :members:
-
-Density fit
------------
-
-.. automodule:: pyscf.scf.dfhf
    :members:
 
 

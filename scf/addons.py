@@ -9,7 +9,7 @@ import sys
 import copy
 from functools import reduce
 import numpy
-import pyscf.lib
+from pyscf import lib
 from pyscf.gto import mole
 from pyscf.gto import moleintor
 from pyscf.lib import logger
@@ -19,54 +19,63 @@ from pyscf.scf import hf
 
 def frac_occ_(mf, tol=1e-3):
     assert(isinstance(mf, hf.RHF))
+    old_get_occ = mf.get_occ
     def get_occ(mo_energy, mo_coeff=None):
         mol = mf.mol
-        mo_occ = numpy.zeros_like(mo_energy)
         nocc = mol.nelectron // 2
-        mo_occ[:nocc] = 2
-        if abs(mo_energy[nocc-1] - mo_energy[nocc]) < tol:
-            lst = abs(mo_energy - mo_energy[nocc-1]) < tol
-            nsocc = int(lst.sum())
-            ndocc = nocc - int(lst[:nocc].sum())
-            frac = 2.*(nocc-ndocc)/nsocc
-            mo_occ[ndocc:nsocc+ndocc] = frac
-            logger.warn(mf, 'fraction occ = %6g  [%d:%d]',
-                        frac, ndocc, ndocc+nsocc)
-        if nocc < mo_occ.size:
+        sort_mo_energy = numpy.sort(mo_energy)
+        lumo = sort_mo_energy[nocc]
+        if abs(sort_mo_energy[nocc-1] - lumo) < tol:
+            mo_occ = numpy.zeros_like(mo_energy)
+            mo_occ[mo_energy<lumo] = 2
+            lst = abs(mo_energy-lumo) < tol
+            degen = int(lst.sum())
+            frac = 2.*numpy.count_nonzero(lst & (mo_occ == 2))/degen
+            mo_occ[lst] = frac
+            logger.warn(mf, 'fraction occ = %6g  for orbitals %s',
+                        frac, numpy.where(lst)[0])
             logger.info(mf, 'HOMO = %.12g  LUMO = %.12g',
-                        mo_energy[nocc-1], mo_energy[nocc])
+                        sort_mo_energy[nocc-1], sort_mo_energy[nocc])
+            logger.debug(mf, '  mo_energy = %s', mo_energy)
         else:
-            logger.info(mf, 'HOMO = %.12g', mo_energy[nocc-1])
-        logger.debug(mf, '  mo_energy = %s', mo_energy)
+            mo_occ = old_get_occ(mo_energy, mo_coeff)
         return mo_occ
+
+    def get_grad(mo_coeff, mo_occ, fock_ao):
+        fock = reduce(numpy.dot, (mo_coeff.T.conj(), fock_ao, mo_coeff))
+        fock *= mo_occ.reshape(-1,1)
+        nocc = mol.nelectron // 2
+        g = fock[:nocc,nocc:].T
+        return g.ravel()
+
     mf.get_occ = get_occ
+    mf.get_grad = get_grad
     return mf
-def frac_occ(mf, tol=1e-3):
-    return frac_occ_(copy.copy(mf), tol)
+frac_occ = frac_occ_
 
 def dynamic_occ_(mf, tol=1e-3):
     assert(isinstance(mf, hf.RHF))
+    old_get_occ = mf.get_occ
     def get_occ(mo_energy, mo_coeff=None):
         mol = mf.mol
-        mo_occ = numpy.zeros_like(mo_energy)
         nocc = mol.nelectron // 2
-        mo_occ[:nocc] = 2
-        if abs(mo_energy[nocc-1] - mo_energy[nocc]) < tol:
-            lst = abs(mo_energy - mo_energy[nocc-1]) < tol
-            ndocc = nocc - int(lst[:nocc].sum())
-            mo_occ[ndocc:nocc] = 0
-            logger.warn(mf, 'set charge = %d', mol.charge+(nocc-ndocc)*2)
-        if nocc < mo_occ.size:
+        sort_mo_energy = numpy.sort(mo_energy)
+        lumo = sort_mo_energy[nocc]
+        if abs(sort_mo_energy[nocc-1] - lumo) < tol:
+            mo_occ = numpy.zeros_like(mo_energy)
+            mo_occ[mo_energy<lumo] = 2
+            lst = abs(mo_energy - lumo) < tol
+            mo_occ[lst] = 0
+            logger.warn(mf, 'set charge = %d', mol.charge+int(lst.sum())*2)
             logger.info(mf, 'HOMO = %.12g  LUMO = %.12g',
-                        mo_energy[nocc-1], mo_energy[nocc])
+                        sort_mo_energy[nocc-1], sort_mo_energy[nocc])
+            logger.debug(mf, '  mo_energy = %s', sort_mo_energy)
         else:
-            logger.info(mf, 'HOMO = %.12g', mo_energy[nocc-1])
-        logger.debug(mf, '  mo_energy = %s', mo_energy)
+            mo_occ = old_get_occ(mo_energy, mo_coeff)
         return mo_occ
     mf.get_occ = get_occ
     return mf
-def dynamic_occ(mf, tol=1e-3):
-    return dynamic_occ_(copy.copy(mf), tol)
+dynamic_occ = dynamic_occ_
 
 def float_occ_(mf):
     '''for UHF, do not fix the nelec_alpha. determine occupation based on energy spectrum'''
@@ -75,7 +84,7 @@ def float_occ_(mf):
     def get_occ(mo_energy, mo_coeff=None):
         mol = mf.mol
         ee = numpy.sort(numpy.hstack(mo_energy))
-        n_a = int((mo_energy[0]<(ee[mol.nelectron-1]+1e-3)).sum())
+        n_a = numpy.count_nonzero(mo_energy[0]<(ee[mol.nelectron-1]+1e-3))
         n_b = mol.nelectron - n_a
         if n_a != mf.nelec[0]:
             logger.info(mf, 'change num. alpha/beta electrons '
@@ -85,8 +94,7 @@ def float_occ_(mf):
         return uhf.UHF.get_occ(mf, mo_energy, mo_coeff)
     mf.get_occ = get_occ
     return mf
-def float_occ(mf):
-    return float_occ_(copy.copy(mf))
+float_occ = float_occ_
 
 def symm_allow_occ_(mf, tol=1e-3):
     '''search the unoccupied orbitals, choose the lowest sets which do not
@@ -120,8 +128,7 @@ break symmetry as the occupied orbitals'''
         return mo_occ
     mf.get_occ = get_occ
     return mf
-def symm_allow_occ(mf, tol=1e-3):
-    return symm_allow_occ_(copy.copy(mf), tol)
+symm_allow_occ = symm_allow_occ_
 
 def follow_state_(mf, occorb=None):
     occstat = [occorb]
@@ -142,8 +149,7 @@ def follow_state_(mf, occorb=None):
         return mo_occ
     mf.get_occ = get_occ
     return mf
-def follow_state(mf, occorb=None):
-    return follow_state_(copy.copy(mf), occorb)
+follow_state = follow_state_
 
 def mom_occ_(mf, occorb, setocc):
     '''Use maximum overlap method to determine occupation number for each orbital in every
@@ -196,8 +202,7 @@ def mom_occ_(mf, occorb, setocc):
         return mo_occ
     mf.get_occ = get_occ
     return mf
-def mom_occ(mf, occorb=None, setocc=None):
-    return mom_occ_(copy.copy(mf), occorb, setocc)
+mom_occ = mom_occ_
 
 def project_mo_nr2nr(mol1, mo1, mol2):
     r''' Project orbital coefficients
@@ -212,7 +217,7 @@ def project_mo_nr2nr(mol1, mo1, mol2):
     '''
     s22 = mol2.intor_symmetric('cint1e_ovlp_sph')
     s21 = mole.intor_cross('cint1e_ovlp_sph', mol2, mol1)
-    return pyscf.lib.cho_solve(s22, numpy.dot(s21, mo1))
+    return lib.cho_solve(s22, numpy.dot(s21, mo1))
 
 def project_mo_nr2r(mol1, mo1, mol2):
     s22 = mol2.intor_symmetric('cint1e_ovlp')
@@ -223,7 +228,7 @@ def project_mo_nr2r(mol1, mo1, mol2):
     # mo2: alpha, beta have been summed in Eq. (*)
     # so DM = mo2[:,:nocc] * 1 * mo2[:,:nocc].H
     mo2 = numpy.dot(s21, mo1)
-    return pyscf.lib.cho_solve(s22, mo2)
+    return lib.cho_solve(s22, mo2)
 
 def project_mo_r2r(mol1, mo1, mol2):
     s22 = mol2.intor_symmetric('cint1e_ovlp')
@@ -231,17 +236,17 @@ def project_mo_r2r(mol1, mo1, mol2):
     s21 = mole.intor_cross('cint1e_ovlp', mol2, mol1)
     t21 = mole.intor_cross('cint1e_spsp', mol2, mol1)
     n2c = s21.shape[1]
-    pl = pyscf.lib.cho_solve(s22, s21)
-    ps = pyscf.lib.cho_solve(t22, t21)
+    pl = lib.cho_solve(s22, s21)
+    ps = lib.cho_solve(t22, t21)
     return numpy.vstack((numpy.dot(pl, mo1[:n2c]),
                          numpy.dot(ps, mo1[n2c:])))
 
 
-def remove_linear_dep(mf):
+def remove_linear_dep_(mf, threshold=1e-8):
     mol = mf.mol
     def eig_nosym(h, s):
         d, t = numpy.linalg.eigh(s)
-        x = t[:,d>1e-8] / numpy.sqrt(d[d>1e-8])
+        x = t[:,d>threshold] / numpy.sqrt(d[d>threshold])
         xhx = reduce(numpy.dot, (x.T, h, x))
         e, c = numpy.linalg.eigh(xhx)
         c = numpy.dot(x, c)
@@ -255,7 +260,7 @@ def remove_linear_dep(mf):
         es = []
         for ir in range(nirrep):
             d, t = numpy.linalg.eigh(s[ir])
-            x = t[:,d>1e-8] / numpy.sqrt(d[d>1e-8])
+            x = t[:,d>threshold] / numpy.sqrt(d[d>threshold])
             xhx = reduce(numpy.dot, (x.T, h[ir], x))
             e, c = numpy.linalg.eigh(xhx)
             cs.append(reduce(numpy.dot, (mol.symm_orb[ir], x, c)))
@@ -285,10 +290,9 @@ def remove_linear_dep(mf):
             raise NotImplementedError
         else:
             eig = eig_nosym
-    return eig
-def remove_linear_dep_(mf):
-    mf.eig = remove_linear_dep(mf)
+    mf.eig = eig
     return mf
+remove_linear_dep = remove_linear_dep_
 
 def convert_to_uhf(mf, out=None):
     '''Convert the given mean-field object to the corresponding unrestricted
@@ -301,10 +305,9 @@ def convert_to_uhf(mf, out=None):
         mf1.__dict__.update(mf.__dict__)
         mf1._keys = _keys
         if mf.mo_energy is not None:
-            mf1.mo_energy = (mf.mo_energy, mf.mo_energy)
-            mf1.mo_coeff = (mf.mo_coeff, mf.mo_coeff)
-            mf1.mo_occ = (numpy.asarray(mf.mo_occ>0, dtype=numpy.double),
-                          numpy.asarray(mf.mo_occ==2, dtype=numpy.double))
+            mf1.mo_energy = numpy.array((mf.mo_energy, mf.mo_energy))
+            mf1.mo_coeff = numpy.array((mf.mo_coeff, mf.mo_coeff))
+            mf1.mo_occ = numpy.array((mf.mo_occ>0, mf.mo_occ==2), dtype=numpy.double)
         return mf1
 
     if out is not None:
@@ -354,7 +357,7 @@ def convert_to_uhf(mf, out=None):
                     break
             if mronew is None:
                 raise RuntimeError('%s object is not SCF object')
-            out = update_mo_(mf, pyscf.lib.overwrite_mro(mf, mronew))
+            out = update_mo_(mf, lib.overwrite_mro(mf, mronew))
 
         return out
 
@@ -417,7 +420,7 @@ def convert_to_rhf(mf, out=None):
                     break
             if mronew is None:
                 raise RuntimeError('%s object is not SCF object')
-            out = update_mo_(mf, pyscf.lib.overwrite_mro(mf, mronew))
+            out = update_mo_(mf, lib.overwrite_mro(mf, mronew))
 
         return out
 

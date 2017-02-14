@@ -23,17 +23,17 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
 
     mo = mo_coeff
     nmo = mo.shape[1]
-    ncas = casscf.ncas
     eris = casscf.ao2mo(mo)
     e_tot, e_ci, fcivec = casscf.casci(mo, ci0, eris, log, locals())
-    if ncas == nmo:
-        log.debug('CASSCF canonicalization')
-        mo, fcivec, mo_energy = casscf.canonicalize(mo, fcivec, eris, False,
-                                                    casscf.natorb, verbose=log)
+    if casscf.ncas == nmo and not casscf.internal_rotation:
+        if casscf.canonicalization:
+            log.debug('CASSCF canonicalization')
+            mo, fcivec, mo_energy = casscf.canonicalize(mo, fcivec, eris, False,
+                                                        casscf.natorb, verbose=log)
         return True, e_tot, e_ci, fcivec, mo
 
     if conv_tol_grad is None:
-        conv_tol_grad = numpy.sqrt(tol*.1)
+        conv_tol_grad = numpy.sqrt(tol)
         logger.info(casscf, 'Set conv_tol_grad to %g', conv_tol_grad)
     conv_tol_ddm = conv_tol_grad * 3
     conv = False
@@ -49,26 +49,28 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         njk = 0
         t3m = t2m
         casdm1_old = casdm1
-        casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, ncas, casscf.nelecas)
+        casdm1, casdm2 = casscf.fcisolver.make_rdm12(fcivec, casscf.ncas, casscf.nelecas)
         norm_ddm = numpy.linalg.norm(casdm1 - casdm1_old)
         t3m = log.timer('update CAS DM', *t3m)
         max_cycle_micro = 1 # casscf.micro_cycle_scheduler(locals())
         max_stepsize = casscf.max_stepsize_scheduler(locals())
         for imicro in range(max_cycle_micro):
             rota = casscf.rotate_orb_cc(mo, lambda:casdm1, lambda:casdm2,
-                                        eris, r0, conv_tol_grad, max_stepsize, log)
+                                        eris, r0, conv_tol_grad*.3, max_stepsize, log)
             u, g_orb, njk1 = next(rota)
             rota.close()
             njk += njk1
             norm_t = numpy.linalg.norm(u-numpy.eye(nmo))
             norm_gorb = numpy.linalg.norm(g_orb)
+            if imicro == 0:
+                norm_gorb0 = norm_gorb
             de = numpy.dot(casscf.pack_uniq_var(u), g_orb)
             t3m = log.timer('orbital rotation', *t3m)
 
+            eris = None
+            u = u.copy()
+            g_orb = g_orb.copy()
             mo = casscf.rotate_mo(mo, u, log)
-            r0 = casscf.pack_uniq_var(u)
-
-            u = g_orb = eris = None
             eris = casscf.ao2mo(mo)
             t3m = log.timer('update eri', *t3m)
 
@@ -81,6 +83,8 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
             t2m = log.timer('micro iter %d'%imicro, *t2m)
             if norm_t < 1e-4 or abs(de) < tol*.4 or norm_gorb < conv_tol_grad*.2:
                 break
+
+            r0 = casscf.pack_uniq_var(u)
 
         totinner += njk
         totmicro += imicro + 1
@@ -113,6 +117,9 @@ def kernel(casscf, mo_coeff, tol=1e-7, conv_tol_grad=None,
         log.info('CASSCF canonicalization')
         mo, fcivec, mo_energy = \
                 casscf.canonicalize(mo, fcivec, eris, False, casscf.natorb, casdm1, log)
+        if casscf.natorb: # dump_chk may save casdm1
+            occ, ucas = casscf._eig(-casdm1, ncore, nocc)[0]
+            casdm1 = -occ
 
     if dump_chk:
         casscf.dump_chk(locals())
