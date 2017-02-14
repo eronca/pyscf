@@ -703,6 +703,7 @@ def dryrun(mc, mo_coeff=None):
     mc.fcisolver.onlywriteIntegral = bak
 
 def block_version(blockexe):
+    return '1.1.0'
     try:
         msg = check_output([blockexe, '-v'])
         version = '1.1.0'
